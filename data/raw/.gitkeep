@@ -1,0 +1,3 @@
+This directory contains the raw `.txt` instance files.  During development
+and experimentation these files can be placed here and converted into
+an Excel workbook via ``scripts/convert_instances.py``.
