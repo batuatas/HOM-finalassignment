@@ -4,6 +4,8 @@ The final assignment asks for two mechanisms:
 
 * Mechanism 1A – a deterministic Variable Neighbourhood Descent (VND)
   schedule cycling through the relocate, swap and block operators.
+* Mechanism 2B – an adaptive pursuit scheme that reacts to the most
+  promising operator while retaining minimum exploration probabilities.
 * Mechanism 2A – an adaptive operator selection scheme using probability
   matching with sliding–window credit assignment.
 
@@ -70,20 +72,21 @@ DESIGNS: Mapping[str, MechanismDesign] = {
     ),
     "adaptive": MechanismDesign(
         key="adaptive",
-        identifier="Mechanism 2A",
-        objective="Adaptive probability matching with sliding-window credits",
+        identifier="Mechanism 2B",
+        objective="Adaptive pursuit with sliding-window rewards and minimum exploration",
         operators=("relocate", "swap", "block"),
         scheduler=(
-            "Credits are updated after each move using the recent reward window; "
-            "selection probabilities are recomputed with a minimum exploration rate."
+            "Credits track recent rewards; probabilities move towards the best operator "
+            "using adaptive pursuit with a minimum exploration floor."
         ),
         parameters={
             "window_size": "Number of recent rewards tracked when updating credits.",
             "p_min": "Lower bound on operator selection probabilities to retain exploration.",
+            "learning_rate": "Speed at which probabilities chase the current best operator.",
         },
         notes=(
-            "Matches the adaptive operator selection mechanism described in the rubric.",
-            "Uses reward normalisation by current makespan improvement to stabilise updates.",
+            "Implements the adaptive pursuit (Mechanism 2B) option from the assignment.",
+            "Normalises rewards by makespan improvement and blends towards targets each update.",
         ),
     ),
 }

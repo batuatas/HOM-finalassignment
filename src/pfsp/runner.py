@@ -1,7 +1,7 @@
 """Experiment runner for the PFSP metaheuristic.
 
 This module provides a convenient function ``run_experiments`` that executes
-multiple runs of either the fixed or adaptive IG/ILS metaheuristic on a
+multiple runs of either the fixed or adaptive pursuit IG/ILS metaheuristic on a
 collection of instances.  Results are returned as a pandas DataFrame for
 further analysis or plotting.
 
@@ -45,6 +45,7 @@ def run_experiments(
     time_limit: Optional[float] = None,
     window_size: int = 50,
     p_min: float = 0.1,
+    learning_rate: float = 0.2,
     block_lengths: tuple = (2, 3),
     seed: Optional[int] = None,
 ) -> pd.DataFrame:
@@ -73,6 +74,9 @@ def run_experiments(
     p_min : float, optional
         Minimum probability for each operator in the adaptive scheduler.
         Ignored for fixed scheduler.  Default is 0.1.
+    learning_rate : float, optional
+        Learning rate for adaptive pursuit probability updates.  Ignored for
+        fixed scheduler.  Default is 0.2.
     block_lengths : tuple, optional
         Block lengths for the block operator and perturbation.  Default is
         ``(2, 3)``.
@@ -101,6 +105,7 @@ def run_experiments(
                 mechanism=mechanism,
                 window_size=window_size,
                 p_min=p_min,
+                learning_rate=learning_rate,
                 block_lengths=block_lengths,
                 seed=run_seed,
             )

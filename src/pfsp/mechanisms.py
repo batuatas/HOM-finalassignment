@@ -47,7 +47,13 @@ def _build_fixed(operators: Sequence[str], _: Mapping[str, object]) -> Scheduler
 def _build_adaptive(operators: Sequence[str], options: Mapping[str, object]) -> SchedulerProtocol:
     window_size = int(options.get("window_size", 50))
     p_min = float(options.get("p_min", 0.1))
-    return AdaptiveScheduler(operators, window_size=window_size, p_min=p_min)
+    learning_rate = float(options.get("learning_rate", 0.2))
+    return AdaptiveScheduler(
+        operators,
+        window_size=window_size,
+        p_min=p_min,
+        learning_rate=learning_rate,
+    )
 
 
 MECHANISMS: Dict[str, MechanismSpec] = {
@@ -97,4 +103,5 @@ def normalise_mechanism_options(
         return options
     options.pop("window_size", None)
     options.pop("p_min", None)
+    options.pop("learning_rate", None)
     return options

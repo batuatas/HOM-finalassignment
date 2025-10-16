@@ -3,8 +3,8 @@
 This module implements a simple single‐solution metaheuristic combining
 Iterated Greedy/Iterated Local Search (IG/ILS) with Variable Neighbourhood
 Descent (VND) local search.  Two operator scheduling mechanisms are
-supported: a fixed sequence (Mechanism 1A) and an adaptive probability
-matching approach (Mechanism 2A).
+supported: a fixed sequence (Mechanism 1A) and an adaptive pursuit
+approach (Mechanism 2B).
 
 The main entry point is the ``IteratedGreedyILS`` class.  Create an instance
 with a processing time matrix and your choice of mechanism, then call
@@ -15,11 +15,22 @@ from __future__ import annotations
 
 import time
 import random
+from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 import numpy as np
 
 from .operators import Operators, makespan
+from .mechanisms import build_scheduler, get_mechanism
+
+
+@dataclass
+class IGILSResult:
+    """Container holding the outcome of a solver run."""
+
+    permutation: List[int]
+    makespan: int
+    iterations: int
 from .mechanisms import Mechanism, build_mechanism
 
 
@@ -31,6 +42,9 @@ class IteratedGreedyILS:
     p_times : np.ndarray
         Processing time matrix of shape ``(m, n)``.
     mechanism : str, optional
+        The scheduling mechanism to use.  ``'fixed'`` selects the fixed
+        sequence scheduler (Mechanism 1A), while ``'adaptive'`` selects
+        the adaptive pursuit scheduler (Mechanism 2B).  Defaults to ``'fixed'``.
         Scheduling mechanism identifier understood by
         :func:`pfsp.mechanisms.build_mechanism`.  Common choices are
         ``'fixed'`` (Mechanism 1A) and ``'adaptive'`` (Mechanism 2A).
@@ -41,6 +55,10 @@ class IteratedGreedyILS:
     p_min : float, optional
         Minimum probability for each operator in the adaptive scheduler.
         Ignored for the fixed scheduler.  Default is 0.1.
+    learning_rate : float, optional
+        Learning rate controlling how quickly adaptive pursuit updates the
+        selection probabilities.  Ignored for the fixed scheduler.  Default
+        is 0.2.
     block_lengths : Tuple[int, ...], optional
         Block lengths used for perturbation and the block operator.  Default
         is (2, 3).
@@ -54,6 +72,7 @@ class IteratedGreedyILS:
         mechanism: str = "fixed",
         window_size: int = 50,
         p_min: float = 0.1,
+        learning_rate: float = 0.2,
         block_lengths: Tuple[int, ...] = (2, 3),
         seed: Optional[int] = None,
     ) -> None:
@@ -62,6 +81,15 @@ class IteratedGreedyILS:
         if seed is not None:
             random.seed(seed)
             np.random.seed(seed)
+        self.mechanism = mechanism
+        self.mechanism_spec = get_mechanism(mechanism)
+        self.op_names = list(self.mechanism_spec.design.operators)
+        scheduler_options = {
+            "window_size": window_size,
+            "p_min": p_min,
+            "learning_rate": learning_rate,
+        }
+        self.scheduler = build_scheduler(mechanism, self.op_names, scheduler_options)
         # Define the list of operator names
         self.op_names = ["relocate", "swap", "block"]
         self.mechanism = mechanism

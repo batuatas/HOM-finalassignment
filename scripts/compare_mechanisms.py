@@ -71,6 +71,12 @@ def main() -> None:
         help="Adaptive scheduler minimum probability",
     )
     parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=0.2,
+        help="Adaptive pursuit learning rate",
+    )
+    parser.add_argument(
         "--block-lengths",
         type=int,
         nargs="*",
@@ -137,6 +143,7 @@ def main() -> None:
             time_limit=args.time_limit,
             window_size=args.window_size,
             p_min=args.p_min,
+            learning_rate=args.learning_rate,
             block_lengths=tuple(args.block_lengths),
             seed=args.seed,
         )

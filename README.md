@@ -15,11 +15,16 @@ Pythonic – there are no heavy frameworks and the only dependencies are NumPy, 
 * `data/Instances.xlsx` – an Excel workbook where each sheet corresponds to a PFSP instance.
   A conversion script is provided to build this workbook from the raw instances.
 * `src/` – all source code.  In particular, the `pfsp` package contains:
-  * `design.py` – textual summaries of the two assignment mechanisms (1A and 2A).
+  * `design.py` – textual summaries of the two assignment mechanisms (1A and 2B).
   * `instance.py` – functions for reading instances from the Excel file and applying
     best-known makespans loaded from CSV.
   * `operators.py` – definitions of the local search and perturbation operators (1‐insert,
     2‐swap, block‐insert).
+  * `scheduler.py` – operator scheduling mechanisms: a fixed sequence (Mechanism 1A) and
+    an adaptive pursuit scheduler (Mechanism 2B) with sliding-window rewards.
+  * `mechanisms.py` – registry that links each design to the concrete scheduler factory.
+  * `algo_ig_ils.py` – an Iterated Greedy/Iterated Local Search metaheuristic for PFSP
+    implementing Mechanism 1A or 2B and returning structured run statistics.
   * `mechanisms/` – a dedicated package for operator scheduling mechanisms.  It exposes
     the deterministic Mechanism 1A, the adaptive probability matching Mechanism 2A and a
     lightweight factory so you can add new scheduling strategies without touching the
@@ -91,6 +96,12 @@ python scripts/compare_mechanisms.py --mechanisms fixed adaptive --describe
 
 * The code uses NumPy for efficient makespan calculation and incremental updates.  All
   random number generators are seeded for reproducibility when required.
+* The adaptive scheduler now implements the Mechanism 2B adaptive pursuit scheme:
+  rewards are normalised by the current makespan improvement, credits are tracked in a
+  sliding window and probabilities are nudged towards the best-performing operator while
+  maintaining a minimum exploration floor.  The `pfsp/mechanisms.py` module exposes the
+  deterministic and adaptive variants declaratively so you can add new mechanisms without
+  changing the rest of the codebase.
 * The adaptive scheduler follows the probability matching approach described in Lecture 6:
   after each operator application a reward is computed based on the relative improvement,
   credits are updated using a sliding window and operator selection probabilities are
