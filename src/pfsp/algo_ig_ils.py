@@ -127,7 +127,7 @@ class IteratedGreedyILS:
         max_no_improve: int = 50,
         time_limit: Optional[float] = None,
         verbose: bool = False,
-    ) -> Tuple[List[int], int]:
+    ) -> IGILSResult:
         """Run the metaheuristic and return the best found permutation.
 
         Parameters
@@ -147,8 +147,9 @@ class IteratedGreedyILS:
 
         Returns
         -------
-        Tuple[List[int], int]
-            The best permutation found and its makespan.
+        IGILSResult
+            Dataclass capturing the best permutation, its makespan and the
+            number of ILS iterations performed.
         """
         m, n = self.p_times.shape
         # Start from a random permutation
@@ -159,7 +160,9 @@ class IteratedGreedyILS:
         best_val = current_val
         no_improve_count = 0
         start_time = time.time()
+        iterations = 0
         for it in range(max_iter):
+            iterations = it + 1
             # Check time limit
             if time_limit is not None and (time.time() - start_time) >= time_limit:
                 if verbose:
@@ -183,4 +186,4 @@ class IteratedGreedyILS:
             current_perm, current_val = self.operators.perturb_block_insert(
                 current_perm, block_lengths=self.block_lengths
             )
-        return best_perm, best_val
+        return IGILSResult(permutation=best_perm, makespan=best_val, iterations=iterations)

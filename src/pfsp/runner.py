@@ -32,7 +32,8 @@ import numpy as np
 import pandas as pd
 
 from .instance import Instance
-from .algo_ig_ils import IteratedGreedyILS
+from .algo_ig_ils import IGILSResult, IteratedGreedyILS
+from .mechanisms import get_mechanism
 
 
 def run_experiments(
@@ -89,6 +90,8 @@ def run_experiments(
         ``iterations`` (number of ILS iterations actually executed).
     """
     records: List[dict] = []
+    spec = get_mechanism(mechanism)
+
     for inst_name, inst in instances.items():
         for run_idx in range(runs):
             # Seed per run (if base seed provided)
@@ -102,13 +105,14 @@ def run_experiments(
                 seed=run_seed,
             )
             start_time = time.time()
-            best_perm, best_val = solver.run(
+            result: IGILSResult = solver.run(
                 max_iter=max_iter,
                 max_no_improve=max_no_improve,
                 time_limit=time_limit,
                 verbose=False,
             )
             elapsed = time.time() - start_time
+            best_val = result.makespan
             best_known = inst.best_makespan
             if best_known and best_known > 0:
                 rpd = 100.0 * (best_val - best_known) / best_known
@@ -117,13 +121,15 @@ def run_experiments(
             records.append(
                 {
                     "algorithm": mechanism,
+                    "mechanism_key": mechanism,
+                    "mechanism_label": spec.design.identifier,
                     "instance": inst_name,
                     "run": run_idx,
                     "makespan": best_val,
                     "best_known": best_known,
                     "rpd": rpd,
                     "elapsed": elapsed,
-                    "iterations": max_iter,  # approximate, actual iterations not tracked
+                    "iterations": result.iterations,
                 }
             )
     return pd.DataFrame.from_records(records)
