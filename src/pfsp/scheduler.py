@@ -1,4 +1,4 @@
-"""Operator scheduling mechanisms for the PFSP metaheuristic.
+"""Compatibility layer for legacy imports.
 
 Two scheduler implementations are provided:
 

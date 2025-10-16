@@ -31,6 +31,7 @@ class IGILSResult:
     permutation: List[int]
     makespan: int
     iterations: int
+from .mechanisms import Mechanism, build_mechanism
 
 
 class IteratedGreedyILS:
@@ -44,6 +45,10 @@ class IteratedGreedyILS:
         The scheduling mechanism to use.  ``'fixed'`` selects the fixed
         sequence scheduler (Mechanism 1A), while ``'adaptive'`` selects
         the adaptive pursuit scheduler (Mechanism 2B).  Defaults to ``'fixed'``.
+        Scheduling mechanism identifier understood by
+        :func:`pfsp.mechanisms.build_mechanism`.  Common choices are
+        ``'fixed'`` (Mechanism 1A) and ``'adaptive'`` (Mechanism 2A).
+        Defaults to ``'fixed'``.
     window_size : int, optional
         Sliding window size for credit computation in the adaptive
         scheduler.  Ignored for the fixed scheduler.  Default is 50.
@@ -85,6 +90,14 @@ class IteratedGreedyILS:
             "learning_rate": learning_rate,
         }
         self.scheduler = build_scheduler(mechanism, self.op_names, scheduler_options)
+        # Define the list of operator names
+        self.op_names = ["relocate", "swap", "block"]
+        self.mechanism = mechanism
+        mech_key = mechanism.lower()
+        params = {"window_size": window_size, "p_min": p_min}
+        if mech_key in {"fixed", "deterministic", "mechanism1a"}:
+            params = {}
+        self.scheduler: Mechanism = build_mechanism(mechanism, self.op_names, **params)
         self.block_lengths = block_lengths
 
     def _local_search(self, perm: List[int], value: int) -> Tuple[List[int], int]:
@@ -108,9 +121,9 @@ class IteratedGreedyILS:
         while improved:
             improved = False
             # Reset scheduler at the start of each VND sweep
-            self.scheduler.start_iter()
+            self.scheduler.start_iteration()
             while True:
-                op_name = self.scheduler.next_operator()
+                op_name = self.scheduler.select_operator()
                 if op_name is None:
                     break
                 neighbour = None

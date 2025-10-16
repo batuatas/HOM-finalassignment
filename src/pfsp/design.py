@@ -6,6 +6,8 @@ The final assignment asks for two mechanisms:
   schedule cycling through the relocate, swap and block operators.
 * Mechanism 2B – an adaptive pursuit scheme that reacts to the most
   promising operator while retaining minimum exploration probabilities.
+* Mechanism 2A – an adaptive operator selection scheme using probability
+  matching with sliding–window credit assignment.
 
 This module captures the high level design decisions for each mechanism so
 that the rest of the codebase can reference a single source of truth when
