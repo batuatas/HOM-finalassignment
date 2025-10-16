@@ -1,4 +1,4 @@
-"""Permutation Flow Shop heuristics package.
+"""Permutation Flow Shop heuristics package."""
 
 This package contains modules for reading PFSP instances, defining local
 search operators, implementing operator scheduling mechanisms and running
