@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Run PFSP metaheuristic experiments from the command line.
 
-This script reads instances from an Excel workbook and executes either the
-fixed or adaptive IG/ILS algorithm on each instance for a specified
-number of independent runs.  Results are aggregated into a CSV file in
-the output directory.  Optionally, basic summary statistics are printed
-to stdout.
+This script reads instances from an Excel workbook and executes the
+Iterated Greedy / Local Search metaheuristic using one of the scheduling
+mechanisms defined for the final assignment.  Compared to the starter
+version, the script now supports loading best known makespans, printing
+tabular summaries and writing enriched CSV outputs that include RPD and
+iteration counts.
 
 Example
 -------
@@ -18,11 +19,11 @@ python scripts/run_experiments.py --instances-file data/Instances.xlsx \
 
 import argparse
 from pathlib import Path
-import os
-import pandas as pd
 
-from pfsp.instance import read_instances
+from pfsp.instance import attach_best_known, load_best_known, read_instances
+from pfsp.mechanisms import available_mechanisms
 from pfsp.runner import run_experiments
+from pfsp.reporting import add_rpd_column, summarise_by_instance
 
 
 def main() -> None:
@@ -33,12 +34,13 @@ def main() -> None:
         required=True,
         help="Path to Excel file with PFSP instances (each sheet is an instance)",
     )
+    mechanisms = available_mechanisms()
     parser.add_argument(
         "--mechanism",
         type=str,
-        choices=["fixed", "adaptive"],
+        choices=sorted(mechanisms.keys()),
         default="fixed",
-        help="Operator scheduling mechanism to use (fixed or adaptive)",
+        help="Operator scheduling mechanism to use",
     )
     parser.add_argument(
         "--runs",
@@ -71,6 +73,12 @@ def main() -> None:
         help="Directory to write CSV results and optional plots",
     )
     parser.add_argument(
+        "--bks-file",
+        type=str,
+        default=None,
+        help="Optional CSV with columns 'instance' and 'best_makespan'",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=None,
@@ -95,9 +103,18 @@ def main() -> None:
         default=[2, 3],
         help="Block lengths for block operator and perturbation",
     )
+    parser.add_argument(
+        "--summary",
+        action="store_true",
+        help="Print aggregated summary statistics after running experiments",
+    )
     args = parser.parse_args()
     # Read instances
     instances = read_instances(args.instances_file)
+    best_known = None
+    if args.bks_file:
+        best_known = load_best_known(args.bks_file)
+        attach_best_known(instances, best_known)
     # Run experiments
     results = run_experiments(
         instances=instances,
@@ -111,6 +128,8 @@ def main() -> None:
         block_lengths=tuple(args.block_lengths),
         seed=args.seed,
     )
+    # Ensure RPD column is up to date
+    results = add_rpd_column(results, best_known)
     # Ensure output directory exists
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -118,10 +137,10 @@ def main() -> None:
     results.to_csv(csv_path, index=False)
     print(f"Wrote results to {csv_path}")
     # Print summary
-    if "rpd" in results.columns and results["rpd"].notna().any():
-        summary = results.groupby("instance")["rpd"].mean()
-        print("Average RPD by instance:")
-        print(summary)
+    if args.summary:
+        summary = summarise_by_instance(results)
+        print("Summary by mechanism and instance:")
+        print(summary.to_string(index=False))
 
 
 if __name__ == "__main__":
