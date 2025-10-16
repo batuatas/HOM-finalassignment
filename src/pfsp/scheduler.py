@@ -1,61 +1,28 @@
-"""Compatibility layer for legacy imports.
+"""Operator schedulers for PFSP mechanisms.
 
-Two scheduler implementations are provided:
-
-* ``FixedScheduler`` follows a predetermined sequence of operators.  It
-  implements the Variable Neighbourhood Descent logic: iterate through
-  operators in order; whenever a move yields an improvement, the sequence
-  restarts from the first operator.
-* ``AdaptiveScheduler`` implements the Mechanism 2B adaptive pursuit
-  scheme.  Operators accumulate credits equal to the average reward over a
-  sliding window.  After every move the probabilities are nudged towards a
-  target distribution that favours the current best operator while
-  preserving a minimum exploration probability ``p_min`` for all
-  operators.  The blending speed is controlled by a ``learning_rate``
-  parameter.
-
-Both schedulers expose a common interface comprising three methods:
-
-``start_iter()``
-    Reset internal state at the beginning of a local search iteration.
-
-``next_operator() -> str | None``
-    Return the name of the next operator to apply.  Returns ``None`` when
-    all operators have been exhausted (for the fixed scheduler).
-
-``update(op: str, reward: float)``
-    Notify the scheduler of the reward obtained from applying operator
-    ``op``.  This triggers credit updates and probability recomputation
-    in the adaptive case.
+Mechanism 1A -> FixedScheduler (deterministic VND sweep).
+Mechanism 2B -> QLearningScheduler (ε-greedy tabular Q-learning with episodes).
 """
 
 from __future__ import annotations
 
 import random
 from collections import deque
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Deque, Dict, List, Optional, Sequence, Tuple
 
 
 class FixedScheduler:
-    """A deterministic operator scheduler implementing Mechanism 1A.
+    """Deterministic operator order (Mechanism 1A)."""
 
-    Parameters
-    ----------
-    operators : Sequence[str]
-        A list of operator names (e.g. ``['relocate', 'swap', 'block']``) that
-        defines the order in which operators are applied.
-    """
-
-    def __init__(self, operators: Sequence[str]):
+    def __init__(self, operators: Sequence[str]) -> None:
         self.operators: List[str] = list(operators)
-        self._index = 0
+        self._index: int = 0
 
     def start_iter(self) -> None:
-        """Reset the scheduler at the start of a local search sweep."""
+        """Called at the start of each VND sweep."""
         self._index = 0
 
     def next_operator(self) -> Optional[str]:
-        """Return the next operator in the fixed sequence or ``None`` when done."""
         if self._index >= len(self.operators):
             return None
         op = self.operators[self._index]
@@ -63,106 +30,125 @@ class FixedScheduler:
         return op
 
     def update(self, op: str, reward: float) -> None:
-        """Fixed scheduler does not adapt; this method is a no‐op."""
-        # No adaptive behaviour
-        pass
+        """Fixed policy ignores rewards."""
+        return
 
 
-class AdaptiveScheduler:
-    """An adaptive operator scheduler implementing Mechanism 2B.
+class QLearningScheduler:
+    """Tabular Q-learning over operator choices (Mechanism 2B).
 
-    Mechanism 2B follows the adaptive pursuit strategy: rewards collected
-    over a sliding window identify the most promising operator, then the
-    selection probabilities move towards a target distribution that keeps a
-    minimum exploration floor ``p_min`` for every operator.  The pursuit
-    step is controlled by ``learning_rate`` and ensures smooth, reactive
-    updates that satisfy the assignment rubric for the 2B option.
+    State  = (improvement_bin, stagnation_bin)
+    Action = one of the operator names
+    Reward = normalised makespan improvement (Δ / current makespan, clipped ≥ 0)
 
     Parameters
     ----------
-    operators : Sequence[str]
-        A list of operator names.
-    window_size : int, optional
-        The length of the sliding window for credit computation.  Defaults
-        to 50.  Larger values smooth out credit fluctuations but slow down
-        adaptation.
-    p_min : float, optional
-        The minimum selection probability for any operator.  Must satisfy
-        0 <= p_min <= 1/len(operators).  Defaults to 0.1.
-    learning_rate : float, optional
-        Step size controlling how quickly probabilities chase the target
-        distribution.  Defaults to 0.2.
+    operators : list[str]
+    window_size : int      sliding window for recent reward average (state signal)
+    epsilon : float        ε for ε-greedy action selection
+    alpha : float          learning rate
+    gamma : float          discount factor
+    episode_len : int      steps per episode before mild ε decay
     """
 
     def __init__(
         self,
         operators: Sequence[str],
         window_size: int = 50,
-        p_min: float = 0.1,
-        learning_rate: float = 0.2,
-    ):
-        self.operators: List[str] = list(operators)
-        self.window_size = window_size
-        if not 0.0 <= p_min <= 1.0 / max(1, len(self.operators)):
-            raise ValueError(
-                "p_min must satisfy 0 <= p_min <= 1/len(operators) for adaptive pursuit"
-            )
-        if not 0.0 < learning_rate <= 1.0:
-            raise ValueError("learning_rate must be in the interval (0, 1]")
-        self.p_min = p_min
-        self.learning_rate = learning_rate
-        self.history: Dict[str, deque] = {op: deque(maxlen=window_size) for op in self.operators}
-        self.credits: Dict[str, float] = {op: 0.0 for op in self.operators}
-        self.probabilities: List[float] = [1.0 / len(self.operators)] * len(self.operators)
+        epsilon: float = 0.10,
+        alpha: float = 0.30,
+        gamma: float = 0.60,
+        episode_len: int = 10,
+    ) -> None:
+        self.ops: List[str] = list(operators)
+        self.win: int = max(5, int(window_size))
+
+        self.epsilon: float = float(epsilon)
+        self.alpha: float = float(alpha)
+        self.gamma: float = float(gamma)
+        self.episode_len: int = max(1, int(episode_len))
+
+        self.hist: Deque[float] = deque(maxlen=self.win)
+        self.no_improve: int = 0
+        self.step_in_episode: int = 0
+        self.episode_idx: int = 0
+
+        # Q-table: key = (state_tuple, op_name)
+        self.Q: Dict[Tuple[Tuple[int, int], str], float] = {}
+
+        self._state: Tuple[int, int] = self._compute_state()
+
+    # ------------ public API used by the metaheuristic ------------
 
     def start_iter(self) -> None:
-        """Nothing to reset at the start of a local search sweep for adaptive scheduler."""
-        pass
+        """Called at the start of each VND sweep (no reset needed)."""
+        return
 
     def next_operator(self) -> str:
-        """Sample an operator according to current probabilities."""
-        # Use random.choices to sample according to probabilities
-        op = random.choices(self.operators, weights=self.probabilities, k=1)[0]
-        return op
+        """Pick next operator by ε-greedy policy from current state."""
+        self.step_in_episode += 1
+        if random.random() < self.epsilon:
+            return random.choice(self.ops)
+
+        s = self._state
+        best_op, best_q = None, float("-inf")
+        for op in self.ops:
+            q = self.Q.get((s, op), 0.0)
+            if q > best_q:
+                best_q, best_op = q, op
+        return best_op if best_op is not None else random.choice(self.ops)
 
     def update(self, op: str, reward: float) -> None:
-        """Update the credit and probabilities after applying operator ``op``.
+        """Observe reward, transition to next state, and perform one-step Q update."""
+        r = max(0.0, float(reward))
+        prev = self._state
 
-        Parameters
-        ----------
-        op : str
-            Operator name that was applied.
-        reward : float
-            The reward obtained from applying the operator.  Typical values
-            are non‐negative; 0 indicates no improvement.
-        """
-        # Append reward to history
-        self.history[op].append(reward)
-        # Recompute credits as average of last window_size rewards
-        for o in self.operators:
-            if self.history[o]:
-                self.credits[o] = sum(self.history[o]) / len(self.history[o])
-            else:
-                self.credits[o] = 0.0
-        # Determine target distribution based on highest credit
-        k = len(self.operators)
-        if any(self.history[o] for o in self.operators):
-            best_op = max(self.credits, key=self.credits.get)
-            best_target = max(0.0, 1.0 - self.p_min * (k - 1))
-            targets = []
-            for o in self.operators:
-                targets.append(best_target if o == best_op else self.p_min)
+        # track stagnation & improvement history
+        if r > 1e-12:
+            self.no_improve = 0
         else:
-            targets = [1.0 / k] * k
+            self.no_improve += 1
+        self.hist.append(r)
 
-        # Blend current probabilities towards targets (adaptive pursuit)
-        updated: List[float] = []
-        for current, target in zip(self.probabilities, targets):
-            updated.append(current + self.learning_rate * (target - current))
+        next_state = self._compute_state()
 
-        # Normalise to sum to 1 and guard against degeneracy
-        total = sum(updated)
-        if total > 0:
-            self.probabilities = [p / total for p in updated]
+        # Q-learning: Q(s,a) ← Q + α [ r + γ max_a' Q(s',a') − Q ]
+        key = (prev, op)
+        old = self.Q.get(key, 0.0)
+        best_next = max(self.Q.get((next_state, a), 0.0) for a in self.ops)
+        self.Q[key] = old + self.alpha * (r + self.gamma * best_next - old)
+
+        self._state = next_state
+
+        # simple episode handling: periodic mild ε decay
+        if self.step_in_episode >= self.episode_len:
+            self.step_in_episode = 0
+            self.episode_idx += 1
+            self.epsilon = max(0.02, self.epsilon * 0.98)
+
+    # ------------ state representation ------------
+
+    def _compute_state(self) -> Tuple[int, int]:
+        """Map recent progress to discrete bins: (improvement, stagnation)."""
+        avg = (sum(self.hist) / len(self.hist)) if self.hist else 0.0
+        if avg > 0.01:
+            impr = 2  # strong
+        elif avg > 0.001:
+            impr = 1  # weak
         else:
-            self.probabilities = [1.0 / k] * k
+            impr = 0  # none
+
+        if self.no_improve >= 50:
+            stag = 3
+        elif self.no_improve >= 20:
+            stag = 2
+        elif self.no_improve >= 5:
+            stag = 1
+        else:
+            stag = 0
+
+        return (impr, stag)
+
+
+# Backwards-compat alias name sometimes used elsewhere
+AdaptiveScheduler = QLearningScheduler

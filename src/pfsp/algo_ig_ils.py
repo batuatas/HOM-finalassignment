@@ -1,22 +1,10 @@
-"""Iterated Greedy / Local Search metaheuristic for PFSP.
-
-This module implements a simple single‐solution metaheuristic combining
-Iterated Greedy/Iterated Local Search (IG/ILS) with Variable Neighbourhood
-Descent (VND) local search.  Two operator scheduling mechanisms are
-supported: a fixed sequence (Mechanism 1A) and an adaptive pursuit
-approach (Mechanism 2B).
-
-The main entry point is the ``IteratedGreedyILS`` class.  Create an instance
-with a processing time matrix and your choice of mechanism, then call
-``run`` to search for high quality permutations.
-"""
-
+"""Iterated Greedy + ILS with VND for PFSP (with optional progress callback)."""
 from __future__ import annotations
 
-import time
 import random
+import time
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 
@@ -26,119 +14,89 @@ from .mechanisms import build_scheduler, get_mechanism
 
 @dataclass
 class IGILSResult:
-    """Container holding the outcome of a solver run."""
-
     permutation: List[int]
     makespan: int
     iterations: int
 
 
+def _neh(p_times: np.ndarray) -> np.ndarray:
+    """NEH initialisation (descending sum with greedy insertion)."""
+    m, n = p_times.shape
+    order = np.argsort(-np.sum(p_times, axis=0))
+    perm = np.empty(0, dtype=np.int64)
+    for j in order:
+        best_val = None
+        best_perm = None
+        for pos in range(perm.shape[0] + 1):
+            cand = np.insert(perm, pos, j)
+            val = makespan(cand, p_times)
+            if best_val is None or val < best_val:
+                best_val = val
+                best_perm = cand
+        perm = best_perm
+    return perm
+
+
 class IteratedGreedyILS:
-    """Iterated Greedy / Local Search metaheuristic for the PFSP.
-
-    Parameters
-    ----------
-    p_times : np.ndarray
-        Processing time matrix of shape ``(m, n)``.
-    mechanism : str, optional
-        The scheduling mechanism to use.  ``'fixed'`` selects the fixed
-        sequence scheduler (Mechanism 1A), while ``'adaptive'`` selects
-        the adaptive pursuit scheduler (Mechanism 2B).  Defaults to ``'fixed'``.
-    window_size : int, optional
-        Sliding window size for credit computation in the adaptive
-        scheduler.  Ignored for the fixed scheduler.  Default is 50.
-    p_min : float, optional
-        Minimum probability for each operator in the adaptive scheduler.
-        Ignored for the fixed scheduler.  Default is 0.1.
-    learning_rate : float, optional
-        Learning rate controlling how quickly adaptive pursuit updates the
-        selection probabilities.  Ignored for the fixed scheduler.  Default
-        is 0.2.
-    block_lengths : Tuple[int, ...], optional
-        Block lengths used for perturbation and the block operator.  Default
-        is (2, 3).
-    seed : Optional[int], optional
-        Random seed for reproducibility.  Default is ``None`` (no seeding).
-    """
-
     def __init__(
         self,
         p_times: np.ndarray,
         mechanism: str = "fixed",
         window_size: int = 50,
-        p_min: float = 0.1,
-        learning_rate: float = 0.2,
+        p_min: float = 0.10,
+        learning_rate: float = 0.30,
         block_lengths: Tuple[int, ...] = (2, 3),
         seed: Optional[int] = None,
     ) -> None:
         self.p_times = np.ascontiguousarray(p_times, dtype=np.int64)
-        self.operators = Operators(self.p_times)
+        self.ops = Operators(self.p_times)
         if seed is not None:
             random.seed(seed)
             np.random.seed(seed)
-        self.mechanism = mechanism
-        self.mechanism_spec = get_mechanism(mechanism)
-        self.op_names = list(self.mechanism_spec.design.operators)
-        scheduler_options = {
-            "window_size": window_size,
-            "p_min": p_min,
-            "learning_rate": learning_rate,
-        }
-        self.scheduler = build_scheduler(mechanism, self.op_names, scheduler_options)
+        self.mechanism_key = mechanism
+        self.mech_spec = get_mechanism(mechanism)
+        self.op_names = list(self.mech_spec.design.operators)
+        self.scheduler = build_scheduler(
+            mechanism,
+            self.op_names,
+            options={
+                "window_size": window_size,
+                "p_min": p_min,
+                "learning_rate": learning_rate,
+            },
+        )
         self.block_lengths = block_lengths
 
     def _local_search(self, perm: np.ndarray, value: int) -> Tuple[np.ndarray, int]:
-        """Perform VND local search until no operator yields an improvement.
-
-        Parameters
-        ----------
-        perm : np.ndarray
-            Starting permutation as a contiguous array of job indices.
-        value : int
-            Makespan of the starting permutation.
-
-        Returns
-        -------
-        Tuple[np.ndarray, int]
-            The locally optimal permutation (array) and its makespan.
-        """
         current_perm = np.ascontiguousarray(perm, dtype=np.int64)
         current_val = value
         improved = True
         while improved:
             improved = False
-            # Reset scheduler at the start of each VND sweep
             self.scheduler.start_iter()
             attempts = 0
             max_attempts = len(self.op_names)
-            while True:
-                if attempts >= max_attempts:
-                    break
+            while attempts < max_attempts:
                 op_name = self.scheduler.next_operator()
                 if op_name is None:
                     break
                 attempts += 1
                 neighbour = None
-                # Apply the chosen operator
                 if op_name == "relocate":
-                    neighbour = self.operators.first_improvement_relocate(current_perm)
+                    neighbour = self.ops.first_improvement_relocate(current_perm)
                 elif op_name == "swap":
-                    neighbour = self.operators.first_improvement_swap(current_perm)
+                    neighbour = self.ops.first_improvement_swap(current_perm)
                 elif op_name == "block":
-                    neighbour = self.operators.first_improvement_block(current_perm, block_lengths=self.block_lengths)
-                # Compute reward
+                    neighbour = self.ops.first_improvement_block(current_perm, block_lengths=self.block_lengths)
                 reward = 0.0
                 if neighbour is not None:
                     new_perm, new_val = neighbour
                     reward = (current_val - new_val) / max(1, current_val)
-                # Update scheduler with reward
                 self.scheduler.update(op_name, reward)
-                # If improvement found, accept and restart sweep
                 if neighbour is not None and new_val < current_val:
                     current_perm, current_val = new_perm, new_val
                     improved = True
                     break
-            # End of sweep
         return current_perm, current_val
 
     def run(
@@ -147,63 +105,47 @@ class IteratedGreedyILS:
         max_no_improve: int = 50,
         time_limit: Optional[float] = None,
         verbose: bool = False,
+        # NEW:
+        progress_cb: Optional[Callable[[int, int], None]] = None,
+        progress_every: int = 10,
     ) -> IGILSResult:
-        """Run the metaheuristic and return the best found permutation.
-
-        Parameters
-        ----------
-        max_iter : int, optional
-            Maximum number of ILS iterations (local optima followed by
-            perturbations).  Defaults to 1000.
-        max_no_improve : int, optional
-            Maximum number of consecutive iterations without improvement
-            allowed before terminating.  Defaults to 50.
-        time_limit : float, optional
-            Time limit in seconds.  If provided, the algorithm stops when
-            ``time.time() - start_time`` exceeds this value.  Defaults to
-            ``None`` (no time limit).
-        verbose : bool, optional
-            If True, print progress information to stdout.  Defaults to False.
-
-        Returns
-        -------
-        IGILSResult
-            Dataclass capturing the best permutation, its makespan and the
-            number of ILS iterations performed.
-        """
-        _, n = self.p_times.shape
-        # Start from a random permutation (NumPy array for fast NumPy/Numba ops)
-        current_perm = np.arange(n, dtype=np.int64)
-        np.random.shuffle(current_perm)
-        current_val = makespan(current_perm, self.p_times)
-        best_perm = current_perm.copy()
-        best_val = current_val
-        no_improve_count = 0
-        start_time = time.time()
+        perm = _neh(self.p_times)
+        val = makespan(perm, self.p_times)
+        best_perm = perm.copy()
+        best_val = val
+        no_improve = 0
+        start = time.time()
         iterations = 0
+
+        def _maybe_log(it: int) -> None:
+            if progress_cb and (it % max(1, progress_every) == 0):
+                progress_cb(it, best_val)
+
         for it in range(max_iter):
             iterations = it + 1
-            # Check time limit
-            if time_limit is not None and (time.time() - start_time) >= time_limit:
+            if time_limit is not None and (time.time() - start) >= time_limit:
                 if verbose:
-                    print(f"Time limit reached at iteration {it}")
+                    print(f"[stop] time limit reached at iter {it}")
                 break
-            # Perform VND local search
-            current_perm, current_val = self._local_search(current_perm, current_val)
-            # Update best solution
-            if current_val < best_val:
-                best_perm, best_val = current_perm.copy(), current_val
-                no_improve_count = 0
+
+            perm, val = self._local_search(perm, val)
+
+            if val < best_val:
+                best_perm, best_val = perm.copy(), val
+                no_improve = 0
                 if verbose:
-                    print(f"Iter {it}: improved makespan to {best_val}")
+                    print(f"[{it}] best={best_val}")
+                if progress_cb:
+                    progress_cb(iterations, best_val)
             else:
-                no_improve_count += 1
-            if no_improve_count >= max_no_improve:
-                if verbose:
-                    print(f"No improvement for {max_no_improve} iterations; stopping.")
-                break
-            # Apply perturbation (block insert) to escape local optimum
-            current_perm, current_val = self.operators.perturb_block_insert(
-                current_perm, block_lengths=self.block_lengths
-            )
+                no_improve += 1
+                if no_improve >= max_no_improve:
+                    if verbose:
+                        print(f"[stop] no improvement in {max_no_improve} iters")
+                    break
+
+            # IG/ILS perturbation
+            perm, val = self.ops.perturb_block_insert(perm, block_lengths=self.block_lengths)
+            _maybe_log(iterations)
+
         return IGILSResult(permutation=best_perm.tolist(), makespan=best_val, iterations=iterations)

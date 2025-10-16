@@ -1,32 +1,12 @@
 """Experiment runner for the PFSP metaheuristic.
 
-This module provides a convenient function ``run_experiments`` that executes
-multiple runs of either the fixed or adaptive pursuit IG/ILS metaheuristic on a
-collection of instances.  Results are returned as a pandas DataFrame for
-further analysis or plotting.
-
-Usage
------
-
-```
-from pfsp.instance import read_instances
-from pfsp.runner import run_experiments
-
-instances = read_instances("data/Instances.xlsx")
-df = run_experiments(instances, mechanism="adaptive", runs=3, max_iter=500)
-df.to_csv("results.csv", index=False)
-```
-
-Each row in the returned DataFrame corresponds to a single run on a single
-instance and includes the algorithm, instance name, run index, makespan,
-best known makespan (if provided in the Instance object), relative percent
-deviation (RPD) if computable, elapsed time and number of iterations.
+Returns a tidy DataFrame and (optionally) writes per-run convergence CSVs.
 """
-
 from __future__ import annotations
 
 import time
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Callable, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -48,57 +28,28 @@ def run_experiments(
     learning_rate: float = 0.2,
     block_lengths: tuple = (2, 3),
     seed: Optional[int] = None,
+    # NEW: progress logging
+    log_progress: bool = False,
+    log_dir: Optional[str] = None,
+    progress_every: int = 10,
+    # NEW: extra Q-learning knobs (ignored by fixed)
+    gamma: float = 0.60,
+    episode_len: int = 10,
 ) -> pd.DataFrame:
     """Execute multiple runs of the IG/ILS algorithm on a set of instances.
 
-    Parameters
-    ----------
-    instances : Dict[str, Instance]
-        A dictionary mapping instance names to ``Instance`` objects.
-    mechanism : str, optional
-        Scheduling mechanism identifier.  Accepted values match those handled
-        by :func:`pfsp.mechanisms.build_mechanism`, e.g. ``'fixed'``,
-        ``'adaptive'`` or ``'mechanism2a'``.  Defaults to ``'fixed'``.
-    runs : int, optional
-        Number of independent runs per instance.  Defaults to 3.
-    max_iter : int, optional
-        Maximum number of ILS iterations per run.  Defaults to 1000.
-    max_no_improve : int, optional
-        Maximum consecutive iterations without improvement.  Defaults to 50.
-    time_limit : float, optional
-        Time limit in seconds for each run.  If ``None``, no time limit is
-        enforced.  Defaults to ``None``.
-    window_size : int, optional
-        Sliding window size for the adaptive scheduler.  Ignored for fixed
-        scheduler.  Default is 50.
-    p_min : float, optional
-        Minimum probability for each operator in the adaptive scheduler.
-        Ignored for fixed scheduler.  Default is 0.1.
-    learning_rate : float, optional
-        Learning rate for adaptive pursuit probability updates.  Ignored for
-        fixed scheduler.  Default is 0.2.
-    block_lengths : tuple, optional
-        Block lengths for the block operator and perturbation.  Default is
-        ``(2, 3)``.
-    seed : Optional[int], optional
-        Base random seed.  If provided, each run will be seeded with
-        ``seed + run_index`` to ensure reproducibility across runs.  Defaults
-        to ``None`` (non‐deterministic behaviour).
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame with one row per run per instance and the following
-        columns: ``algorithm``, ``instance``, ``run``, ``makespan``,
-        ``best_known``, ``rpd`` (relative percent deviation), ``elapsed`` and
-        ``iterations`` (number of ILS iterations actually executed).
+    Returns a DataFrame with one row per run per instance, plus optional
+    convergence CSVs under <log_dir>/convergence/<mechanism>/ if enabled.
     """
     records: List[dict] = []
     spec = get_mechanism(mechanism)
+    conv_base: Optional[Path] = None
+    if log_progress and log_dir:
+        conv_base = Path(log_dir) / "convergence" / mechanism
+        conv_base.mkdir(parents=True, exist_ok=True)
 
     for inst_name, inst in instances.items():
         for run_idx in range(runs):
-            # Seed per run (if base seed provided)
             run_seed = seed + run_idx if seed is not None else None
             solver = IteratedGreedyILS(
                 inst.p_times,
@@ -109,20 +60,41 @@ def run_experiments(
                 block_lengths=block_lengths,
                 seed=run_seed,
             )
+
             start_time = time.time()
+            convergence_rows: List[dict] = []
+
+            def _progress_cb(iter_no: int, best_val: int) -> None:
+                # called by solver on every improvement and every N iterations
+                convergence_rows.append(
+                    {
+                        "instance": inst_name,
+                        "mechanism": mechanism,
+                        "run": run_idx,
+                        "iter": iter_no,
+                        "elapsed": time.time() - start_time,
+                        "best_makespan": int(best_val),
+                        "seed": run_seed,
+                    }
+                )
+
             result: IGILSResult = solver.run(
                 max_iter=max_iter,
                 max_no_improve=max_no_improve,
                 time_limit=time_limit,
                 verbose=False,
+                progress_cb=_progress_cb if log_progress else None,
+                progress_every=max(1, int(progress_every)),
             )
             elapsed = time.time() - start_time
             best_val = result.makespan
             best_known = inst.best_makespan
-            if best_known and best_known > 0:
-                rpd = 100.0 * (best_val - best_known) / best_known
-            else:
-                rpd = None
+            rpd = (
+                100.0 * (best_val - best_known) / best_known
+                if (best_known is not None and best_known > 0)
+                else None
+            )
+
             records.append(
                 {
                     "algorithm": mechanism,
@@ -134,7 +106,14 @@ def run_experiments(
                     "best_known": best_known,
                     "rpd": rpd,
                     "elapsed": elapsed,
-                    "iterations": result.iterations,
+                    "iterations": int(result.iterations),
+                    "seed": run_seed,
                 }
             )
+
+            # Write convergence CSV for this run, if requested
+            if log_progress and conv_base is not None and convergence_rows:
+                out_path = conv_base / f"{inst_name}_run{run_idx}.csv"
+                pd.DataFrame(convergence_rows).to_csv(out_path, index=False)
+
     return pd.DataFrame.from_records(records)
