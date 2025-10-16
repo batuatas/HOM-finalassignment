@@ -36,9 +36,11 @@ def main() -> None:
     parser.add_argument(
         "--mechanism",
         type=str,
-        choices=["fixed", "adaptive"],
         default="fixed",
-        help="Operator scheduling mechanism to use (fixed or adaptive)",
+        help=(
+            "Operator scheduling mechanism to use.  Supports 'fixed', 'adaptive' and the "
+            "aliases understood by pfsp.mechanisms.build_mechanism."
+        ),
     )
     parser.add_argument(
         "--runs",
