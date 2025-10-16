@@ -15,22 +15,12 @@ from __future__ import annotations
 
 import time
 import random
-from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 import numpy as np
 
 from .operators import Operators, makespan
-from .mechanisms import build_scheduler, get_mechanism
-
-
-@dataclass
-class IGILSResult:
-    """Container holding the outcome of a solver run."""
-
-    permutation: List[int]
-    makespan: int
-    iterations: int
+from .mechanisms import Mechanism, build_mechanism
 
 
 class IteratedGreedyILS:
@@ -41,9 +31,10 @@ class IteratedGreedyILS:
     p_times : np.ndarray
         Processing time matrix of shape ``(m, n)``.
     mechanism : str, optional
-        The scheduling mechanism to use.  ``'fixed'`` selects the fixed
-        sequence scheduler (Mechanism 1A), while ``'adaptive'`` selects
-        the adaptive scheduler (Mechanism 2A).  Defaults to ``'fixed'``.
+        Scheduling mechanism identifier understood by
+        :func:`pfsp.mechanisms.build_mechanism`.  Common choices are
+        ``'fixed'`` (Mechanism 1A) and ``'adaptive'`` (Mechanism 2A).
+        Defaults to ``'fixed'``.
     window_size : int, optional
         Sliding window size for credit computation in the adaptive
         scheduler.  Ignored for the fixed scheduler.  Default is 50.
@@ -71,11 +62,14 @@ class IteratedGreedyILS:
         if seed is not None:
             random.seed(seed)
             np.random.seed(seed)
+        # Define the list of operator names
+        self.op_names = ["relocate", "swap", "block"]
         self.mechanism = mechanism
-        self.mechanism_spec = get_mechanism(mechanism)
-        self.op_names = list(self.mechanism_spec.design.operators)
-        scheduler_options = {"window_size": window_size, "p_min": p_min}
-        self.scheduler = build_scheduler(mechanism, self.op_names, scheduler_options)
+        mech_key = mechanism.lower()
+        params = {"window_size": window_size, "p_min": p_min}
+        if mech_key in {"fixed", "deterministic", "mechanism1a"}:
+            params = {}
+        self.scheduler: Mechanism = build_mechanism(mechanism, self.op_names, **params)
         self.block_lengths = block_lengths
 
     def _local_search(self, perm: List[int], value: int) -> Tuple[List[int], int]:
@@ -99,9 +93,9 @@ class IteratedGreedyILS:
         while improved:
             improved = False
             # Reset scheduler at the start of each VND sweep
-            self.scheduler.start_iter()
+            self.scheduler.start_iteration()
             while True:
-                op_name = self.scheduler.next_operator()
+                op_name = self.scheduler.select_operator()
                 if op_name is None:
                     break
                 neighbour = None

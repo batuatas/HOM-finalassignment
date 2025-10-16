@@ -55,8 +55,9 @@ def run_experiments(
     instances : Dict[str, Instance]
         A dictionary mapping instance names to ``Instance`` objects.
     mechanism : str, optional
-        Scheduling mechanism to use: ``'fixed'`` or ``'adaptive'``.
-        Defaults to ``'fixed'``.
+        Scheduling mechanism identifier.  Accepted values match those handled
+        by :func:`pfsp.mechanisms.build_mechanism`, e.g. ``'fixed'``,
+        ``'adaptive'`` or ``'mechanism2a'``.  Defaults to ``'fixed'``.
     runs : int, optional
         Number of independent runs per instance.  Defaults to 3.
     max_iter : int, optional

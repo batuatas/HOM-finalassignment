@@ -20,9 +20,10 @@ Pythonic – there are no heavy frameworks and the only dependencies are NumPy, 
     best-known makespans loaded from CSV.
   * `operators.py` – definitions of the local search and perturbation operators (1‐insert,
     2‐swap, block‐insert).
-  * `scheduler.py` – operator scheduling mechanisms: a fixed sequence (Mechanism 1A) and
-    an adaptive scheduler (Mechanism 2A) with credit assignment and probability matching.
-  * `mechanisms.py` – registry that links each design to the concrete scheduler factory.
+  * `mechanisms/` – a dedicated package for operator scheduling mechanisms.  It exposes
+    the deterministic Mechanism 1A, the adaptive probability matching Mechanism 2A and a
+    lightweight factory so you can add new scheduling strategies without touching the
+    core metaheuristic.
   * `algo_ig_ils.py` – an Iterated Greedy/Iterated Local Search metaheuristic for PFSP
     implementing Mechanism 1A or 2A and returning structured run statistics.
   * `runner.py` – a high‐level experiment runner that executes multiple runs on a set of

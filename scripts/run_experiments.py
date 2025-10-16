@@ -42,6 +42,11 @@ def main() -> None:
         choices=sorted(mechanisms.keys()),
         default="fixed",
         help="Operator scheduling mechanism to use",
+        default="fixed",
+        help=(
+            "Operator scheduling mechanism to use.  Supports 'fixed', 'adaptive' and the "
+            "aliases understood by pfsp.mechanisms.build_mechanism."
+        ),
     )
     parser.add_argument(
         "--runs",
