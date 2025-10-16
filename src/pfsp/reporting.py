@@ -42,10 +42,18 @@ def add_rpd_column(df: pd.DataFrame, best_known: Mapping[str, int] | None = None
 def summarise_by_instance(df: pd.DataFrame) -> pd.DataFrame:
     """Compute summary statistics grouped by instance and mechanism."""
 
-    required = {"instance", "algorithm", "makespan", "elapsed"}
+    required = {"instance", "makespan", "elapsed"}
+    if "mechanism_label" not in df.columns and "mechanism_key" not in df.columns:
+        required.add("algorithm")
     missing = required.difference(df.columns)
     if missing:
         raise ValueError(f"DataFrame missing required columns: {', '.join(sorted(missing))}")
+    if "mechanism_label" in df.columns:
+        group_cols = ["mechanism_label", "instance"]
+    elif "mechanism_key" in df.columns:
+        group_cols = ["mechanism_key", "instance"]
+    else:
+        group_cols = ["algorithm", "instance"]
     agg_dict: dict[str, object] = {
         "makespan": ["mean", "min", "std"],
         "elapsed": "mean",
@@ -54,7 +62,7 @@ def summarise_by_instance(df: pd.DataFrame) -> pd.DataFrame:
         agg_dict["iterations"] = "mean"
     if "rpd" in df.columns:
         agg_dict["rpd"] = "mean"
-    grouped = df.groupby(["algorithm", "instance"], as_index=False).agg(agg_dict)
+    grouped = df.groupby(group_cols, as_index=False).agg(agg_dict)
     # Flatten MultiIndex columns produced by aggregation
     grouped.columns = [
         "_".join(filter(None, map(str, col))).rstrip("_") for col in grouped.columns.values

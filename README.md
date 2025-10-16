@@ -15,14 +15,14 @@ Pythonic – there are no heavy frameworks and the only dependencies are NumPy, 
 * `data/Instances.xlsx` – an Excel workbook where each sheet corresponds to a PFSP instance.
   A conversion script is provided to build this workbook from the raw instances.
 * `src/` – all source code.  In particular, the `pfsp` package contains:
+  * `design.py` – textual summaries of the two assignment mechanisms (1A and 2A).
   * `instance.py` – functions for reading instances from the Excel file and applying
     best-known makespans loaded from CSV.
   * `operators.py` – definitions of the local search and perturbation operators (1‐insert,
     2‐swap, block‐insert).
   * `scheduler.py` – operator scheduling mechanisms: a fixed sequence (Mechanism 1A) and
     an adaptive scheduler (Mechanism 2A) with credit assignment and probability matching.
-  * `mechanisms.py` – declarative configuration for the assignment mechanisms, providing
-    factories that build the appropriate scheduler.
+  * `mechanisms.py` – registry that links each design to the concrete scheduler factory.
   * `algo_ig_ils.py` – an Iterated Greedy/Iterated Local Search metaheuristic for PFSP
     implementing Mechanism 1A or 2A and returning structured run statistics.
   * `runner.py` – a high‐level experiment runner that executes multiple runs on a set of
@@ -34,10 +34,10 @@ Pythonic – there are no heavy frameworks and the only dependencies are NumPy, 
     `data/Instances.xlsx` with the required sheet names.
   * `run_experiments.py` – orchestrate a series of experiments on all instances in
     `data/Instances.xlsx` and produce enriched CSV files (including RPD, best known values
-    and iteration counts).  It can optionally print per-instance summaries and accepts a
-    best-known makespan CSV.
-  * `compare_mechanisms.py` – evaluate multiple mechanisms in a single command and write a
-    combined summary table to disk.
+    and iteration counts).  It can optionally print per-instance summaries, describe the
+    selected mechanism design and accepts a best-known makespan CSV.
+  * `compare_mechanisms.py` – evaluate multiple mechanisms in a single command, optionally
+    print their design summaries and write a combined summary table to disk.
   * `add_rpd.py` – post-process a results CSV to append Relative Percent Deviation values
     given a file of best-known makespans.
 
@@ -74,6 +74,17 @@ python scripts/compare_mechanisms.py \
 
 4. The `results/` directory will contain CSV summaries, convergence logs and plot images
    comparing the deterministic and adaptive variants.
+
+## Mechanism designs
+
+The final assignment rubric references two mechanisms.  Their rationale and configurable
+parameters are captured in `src/pfsp/design.py`.  You can display these summaries from the
+command line:
+
+```bash
+python scripts/run_experiments.py --mechanism fixed --describe
+python scripts/compare_mechanisms.py --mechanisms fixed adaptive --describe
+```
 
 ## Notes
 

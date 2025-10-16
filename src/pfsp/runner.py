@@ -33,7 +33,7 @@ import pandas as pd
 
 from .instance import Instance
 from .algo_ig_ils import IGILSResult, IteratedGreedyILS
-from .mechanisms import available_mechanisms
+from .mechanisms import get_mechanism
 
 
 def run_experiments(
@@ -89,11 +89,7 @@ def run_experiments(
         ``iterations`` (number of ILS iterations actually executed).
     """
     records: List[dict] = []
-    available = available_mechanisms()
-    if mechanism not in available:
-        raise ValueError(
-            f"Unknown mechanism '{mechanism}'. Available options: {', '.join(available)}"
-        )
+    spec = get_mechanism(mechanism)
 
     for inst_name, inst in instances.items():
         for run_idx in range(runs):
@@ -124,6 +120,8 @@ def run_experiments(
             records.append(
                 {
                     "algorithm": mechanism,
+                    "mechanism_key": mechanism,
+                    "mechanism_label": spec.design.identifier,
                     "instance": inst_name,
                     "run": run_idx,
                     "makespan": best_val,

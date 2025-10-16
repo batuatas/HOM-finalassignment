@@ -21,7 +21,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 from .operators import Operators, makespan
-from .mechanisms import build_scheduler
+from .mechanisms import build_scheduler, get_mechanism
 
 
 @dataclass
@@ -71,9 +71,9 @@ class IteratedGreedyILS:
         if seed is not None:
             random.seed(seed)
             np.random.seed(seed)
-        # Define the list of operator names
-        self.op_names = ["relocate", "swap", "block"]
         self.mechanism = mechanism
+        self.mechanism_spec = get_mechanism(mechanism)
+        self.op_names = list(self.mechanism_spec.design.operators)
         scheduler_options = {"window_size": window_size, "p_min": p_min}
         self.scheduler = build_scheduler(mechanism, self.op_names, scheduler_options)
         self.block_lengths = block_lengths

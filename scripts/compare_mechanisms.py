@@ -9,6 +9,7 @@ from typing import List
 
 import pandas as pd
 
+from pfsp.design import describe_design
 from pfsp.instance import attach_best_known, load_best_known, read_instances
 from pfsp.mechanisms import available_mechanisms
 from pfsp.runner import run_experiments
@@ -99,6 +100,11 @@ def main() -> None:
         action="store_true",
         help="Print summary statistics and write summary.csv",
     )
+    parser.add_argument(
+        "--describe",
+        action="store_true",
+        help="Print the design description of the requested mechanisms and exit",
+    )
     args = parser.parse_args()
 
     requested = args.mechanisms or list(mechanisms.keys())
@@ -107,6 +113,12 @@ def main() -> None:
         raise ValueError(
             f"Unknown mechanisms requested: {', '.join(invalid)}. Available: {', '.join(mechanisms)}"
         )
+
+    if args.describe:
+        for mech in requested:
+            print(describe_design(mech))
+            print()
+        return
 
     instances = read_instances(args.instances_file)
     best_known = None

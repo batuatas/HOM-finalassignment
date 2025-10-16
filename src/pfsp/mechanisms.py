@@ -1,18 +1,10 @@
-"""Utilities for configuring operator scheduling mechanisms.
+"""Factory helpers for assignment mechanisms.
 
-The final assignment expects two baseline mechanisms:
-
-* ``fixed`` – a deterministic Variable Neighbourhood Descent sweep where the
-  neighbourhoods are explored in a fixed order.  This corresponds to
-  Mechanism 1A in the rubric.
-* ``adaptive`` – an adaptive probability matching mechanism that assigns
-  credits to operators based on recent performance and samples operators
-  proportionally to the credit.  This matches Mechanism 2A.
-
-This module centralises the logic for building schedulers so that the rest of
-the codebase can treat mechanisms as simple configuration values.  New
-mechanisms can be registered by extending :data:`MECHANISMS` with a new
-``MechanismConfig`` instance.
+This module bridges the high-level designs documented in :mod:`pfsp.design`
+with the scheduler implementations in :mod:`pfsp.scheduler`.  Each mechanism
+is represented by a :class:`MechanismSpec` combining metadata with the
+callable that instantiates the scheduler required by the Iterated Greedy / ILS
+metaheuristic used in the final assignment.
 """
 
 from __future__ import annotations
@@ -20,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Dict, Mapping, MutableMapping, Sequence
 
+from .design import MechanismDesign, get_design
 from .scheduler import AdaptiveScheduler, FixedScheduler
 
 
@@ -40,23 +33,10 @@ SchedulerFactory = Callable[[Sequence[str], Mapping[str, object]], SchedulerProt
 
 
 @dataclass(frozen=True)
-class MechanismConfig:
-    """Container describing a scheduling mechanism.
+class MechanismSpec:
+    """Pair a high-level design description with a scheduler factory."""
 
-    Attributes
-    ----------
-    name:
-        Short identifier used from the command line (e.g. ``"fixed"``).
-    description:
-        Human readable summary displayed in help messages and reports.
-    factory:
-        Callable that builds a scheduler for a given list of operators.  The
-        callable receives the operator names and a mapping of keyword options
-        extracted from user input.
-    """
-
-    name: str
-    description: str
+    design: MechanismDesign
     factory: SchedulerFactory
 
 
@@ -70,24 +50,29 @@ def _build_adaptive(operators: Sequence[str], options: Mapping[str, object]) -> 
     return AdaptiveScheduler(operators, window_size=window_size, p_min=p_min)
 
 
-MECHANISMS: Dict[str, MechanismConfig] = {
-    "fixed": MechanismConfig(
-        name="fixed",
-        description="Deterministic VND sweep (Mechanism 1A)",
-        factory=_build_fixed,
-    ),
-    "adaptive": MechanismConfig(
-        name="adaptive",
-        description="Adaptive probability matching (Mechanism 2A)",
-        factory=_build_adaptive,
-    ),
+MECHANISMS: Dict[str, MechanismSpec] = {
+    key: MechanismSpec(design=get_design(key), factory=factory)
+    for key, factory in {
+        "fixed": _build_fixed,
+        "adaptive": _build_adaptive,
+    }.items()
 }
 
 
 def available_mechanisms() -> Dict[str, str]:
-    """Return mapping of mechanism name to human readable description."""
+    """Return mapping of mechanism key to assignment identifier."""
 
-    return {name: config.description for name, config in MECHANISMS.items()}
+    return {name: spec.design.identifier for name, spec in MECHANISMS.items()}
+
+
+def get_mechanism(key: str) -> MechanismSpec:
+    """Return the mechanism specification for ``key``."""
+
+    if key not in MECHANISMS:
+        raise ValueError(
+            f"Unknown mechanism '{key}'. Available mechanisms: {', '.join(sorted(MECHANISMS))}"
+        )
+    return MECHANISMS[key]
 
 
 def build_scheduler(
@@ -95,43 +80,21 @@ def build_scheduler(
     operators: Sequence[str],
     options: Mapping[str, object] | None = None,
 ) -> SchedulerProtocol:
-    """Create a scheduler instance for the requested mechanism.
+    """Create a scheduler instance for the requested mechanism."""
 
-    Parameters
-    ----------
-    mechanism:
-        Key identifying the mechanism to instantiate.
-    operators:
-        Sequence of operator names understood by the scheduler.
-    options:
-        Optional mapping of additional keyword arguments.  Only options
-        relevant to the chosen mechanism are used; unknown keys are ignored.
-    """
-
-    if mechanism not in MECHANISMS:
-        raise ValueError(
-            f"Unknown mechanism '{mechanism}'. Available mechanisms: {', '.join(MECHANISMS)}"
-        )
-    config = MECHANISMS[mechanism]
+    spec = get_mechanism(mechanism)
     opts: Mapping[str, object] = options or {}
-    return config.factory(operators, opts)
+    return spec.factory(operators, opts)
 
 
 def normalise_mechanism_options(
     mechanism: str,
     options: MutableMapping[str, object],
 ) -> MutableMapping[str, object]:
-    """Filter option mapping so that irrelevant keys are discarded.
-
-    This is mainly used by the CLI scripts to ensure that options intended for
-    the adaptive mechanism (such as ``window_size`` and ``p_min``) are not
-    mistakenly propagated to other mechanisms.
-    """
+    """Filter option mapping so that irrelevant keys are discarded."""
 
     if mechanism == "adaptive":
         return options
-    # Remove adaptive specific options for deterministic mechanisms
     options.pop("window_size", None)
     options.pop("p_min", None)
     return options
-

@@ -20,6 +20,7 @@ python scripts/run_experiments.py --instances-file data/Instances.xlsx \
 import argparse
 from pathlib import Path
 
+from pfsp.design import describe_design
 from pfsp.instance import attach_best_known, load_best_known, read_instances
 from pfsp.mechanisms import available_mechanisms
 from pfsp.runner import run_experiments
@@ -108,7 +109,15 @@ def main() -> None:
         action="store_true",
         help="Print aggregated summary statistics after running experiments",
     )
+    parser.add_argument(
+        "--describe",
+        action="store_true",
+        help="Print the design summary for the selected mechanism and exit",
+    )
     args = parser.parse_args()
+    if args.describe:
+        print(describe_design(args.mechanism))
+        return
     # Read instances
     instances = read_instances(args.instances_file)
     best_known = None
