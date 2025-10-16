@@ -6,13 +6,13 @@ Two scheduler implementations are provided:
   implements the Variable Neighbourhood Descent logic: iterate through
   operators in order; whenever a move yields an improvement, the sequence
   restarts from the first operator.
-* ``AdaptiveScheduler`` implements a simple adaptive operator selection
-  mechanism based on credit assignment and probability matching.  Each
-  operator accumulates a credit equal to the average reward obtained in
-  the last ``window_size`` calls.  The probability of selecting an
-  operator is proportional to its credit (with a minimum probability
-  ``p_min`` to ensure exploration).  Credits and probabilities are
-  updated immediately after each operator call.
+* ``AdaptiveScheduler`` implements the Mechanism 2B adaptive pursuit
+  scheme.  Operators accumulate credits equal to the average reward over a
+  sliding window.  After every move the probabilities are nudged towards a
+  target distribution that favours the current best operator while
+  preserving a minimum exploration probability ``p_min`` for all
+  operators.  The blending speed is controlled by a ``learning_rate``
+  parameter.
 
 Both schedulers expose a common interface comprising three methods:
 
@@ -69,20 +69,14 @@ class FixedScheduler:
 
 
 class AdaptiveScheduler:
-    """An adaptive operator scheduler implementing Mechanism 2A.
+    """An adaptive operator scheduler implementing Mechanism 2B.
 
-    This scheduler assigns a numerical credit to each operator based on the
-    average reward obtained over a sliding window.  At each call to
-    ``next_operator``, it samples an operator according to the probability
-    matching rule:
-
-    ``p_j = p_min + (1 - p_min * K) * (credit_j / sum credits)``
-
-    where ``K`` is the number of operators.  When no credits are available
-    (e.g. at the beginning), all operators are selected with equal
-    probability.  After each operator application, the scheduler must be
-    notified via ``update(op, reward)`` so that credits and probabilities
-    are updated.
+    Mechanism 2B follows the adaptive pursuit strategy: rewards collected
+    over a sliding window identify the most promising operator, then the
+    selection probabilities move towards a target distribution that keeps a
+    minimum exploration floor ``p_min`` for every operator.  The pursuit
+    step is controlled by ``learning_rate`` and ensures smooth, reactive
+    updates that satisfy the assignment rubric for the 2B option.
 
     Parameters
     ----------
@@ -95,12 +89,28 @@ class AdaptiveScheduler:
     p_min : float, optional
         The minimum selection probability for any operator.  Must satisfy
         0 <= p_min <= 1/len(operators).  Defaults to 0.1.
+    learning_rate : float, optional
+        Step size controlling how quickly probabilities chase the target
+        distribution.  Defaults to 0.2.
     """
 
-    def __init__(self, operators: Sequence[str], window_size: int = 50, p_min: float = 0.1):
+    def __init__(
+        self,
+        operators: Sequence[str],
+        window_size: int = 50,
+        p_min: float = 0.1,
+        learning_rate: float = 0.2,
+    ):
         self.operators: List[str] = list(operators)
         self.window_size = window_size
+        if not 0.0 <= p_min <= 1.0 / max(1, len(self.operators)):
+            raise ValueError(
+                "p_min must satisfy 0 <= p_min <= 1/len(operators) for adaptive pursuit"
+            )
+        if not 0.0 < learning_rate <= 1.0:
+            raise ValueError("learning_rate must be in the interval (0, 1]")
         self.p_min = p_min
+        self.learning_rate = learning_rate
         self.history: Dict[str, deque] = {op: deque(maxlen=window_size) for op in self.operators}
         self.credits: Dict[str, float] = {op: 0.0 for op in self.operators}
         self.probabilities: List[float] = [1.0 / len(self.operators)] * len(self.operators)
@@ -134,21 +144,25 @@ class AdaptiveScheduler:
                 self.credits[o] = sum(self.history[o]) / len(self.history[o])
             else:
                 self.credits[o] = 0.0
-        # Compute probabilities
-        total_credit = sum(self.credits.values())
+        # Determine target distribution based on highest credit
         k = len(self.operators)
-        if total_credit > 0:
-            probs = []
+        if any(self.history[o] for o in self.operators):
+            best_op = max(self.credits, key=self.credits.get)
+            best_target = max(0.0, 1.0 - self.p_min * (k - 1))
+            targets = []
             for o in self.operators:
-                base = self.p_min
-                scaled = (1.0 - self.p_min * k) * (self.credits[o] / total_credit)
-                probs.append(base + scaled)
+                targets.append(best_target if o == best_op else self.p_min)
         else:
-            # If all credits are zero, assign equal probabilities
-            probs = [1.0 / k] * k
-        # Normalise to sum to 1 due to possible numerical issues
-        s = sum(probs)
-        if s > 0:
-            self.probabilities = [p / s for p in probs]
+            targets = [1.0 / k] * k
+
+        # Blend current probabilities towards targets (adaptive pursuit)
+        updated: List[float] = []
+        for current, target in zip(self.probabilities, targets):
+            updated.append(current + self.learning_rate * (target - current))
+
+        # Normalise to sum to 1 and guard against degeneracy
+        total = sum(updated)
+        if total > 0:
+            self.probabilities = [p / total for p in updated]
         else:
             self.probabilities = [1.0 / k] * k

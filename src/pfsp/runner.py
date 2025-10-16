@@ -1,7 +1,7 @@
 """Experiment runner for the PFSP metaheuristic.
 
 This module provides a convenient function ``run_experiments`` that executes
-multiple runs of either the fixed or adaptive IG/ILS metaheuristic on a
+multiple runs of either the fixed or adaptive pursuit IG/ILS metaheuristic on a
 collection of instances.  Results are returned as a pandas DataFrame for
 further analysis or plotting.
 
@@ -32,7 +32,8 @@ import numpy as np
 import pandas as pd
 
 from .instance import Instance
-from .algo_ig_ils import IteratedGreedyILS
+from .algo_ig_ils import IGILSResult, IteratedGreedyILS
+from .mechanisms import get_mechanism
 
 
 def run_experiments(
@@ -44,6 +45,7 @@ def run_experiments(
     time_limit: Optional[float] = None,
     window_size: int = 50,
     p_min: float = 0.1,
+    learning_rate: float = 0.2,
     block_lengths: tuple = (2, 3),
     seed: Optional[int] = None,
 ) -> pd.DataFrame:
@@ -71,6 +73,9 @@ def run_experiments(
     p_min : float, optional
         Minimum probability for each operator in the adaptive scheduler.
         Ignored for fixed scheduler.  Default is 0.1.
+    learning_rate : float, optional
+        Learning rate for adaptive pursuit probability updates.  Ignored for
+        fixed scheduler.  Default is 0.2.
     block_lengths : tuple, optional
         Block lengths for the block operator and perturbation.  Default is
         ``(2, 3)``.
@@ -88,6 +93,8 @@ def run_experiments(
         ``iterations`` (number of ILS iterations actually executed).
     """
     records: List[dict] = []
+    spec = get_mechanism(mechanism)
+
     for inst_name, inst in instances.items():
         for run_idx in range(runs):
             # Seed per run (if base seed provided)
@@ -97,17 +104,19 @@ def run_experiments(
                 mechanism=mechanism,
                 window_size=window_size,
                 p_min=p_min,
+                learning_rate=learning_rate,
                 block_lengths=block_lengths,
                 seed=run_seed,
             )
             start_time = time.time()
-            best_perm, best_val = solver.run(
+            result: IGILSResult = solver.run(
                 max_iter=max_iter,
                 max_no_improve=max_no_improve,
                 time_limit=time_limit,
                 verbose=False,
             )
             elapsed = time.time() - start_time
+            best_val = result.makespan
             best_known = inst.best_makespan
             if best_known and best_known > 0:
                 rpd = 100.0 * (best_val - best_known) / best_known
@@ -116,13 +125,15 @@ def run_experiments(
             records.append(
                 {
                     "algorithm": mechanism,
+                    "mechanism_key": mechanism,
+                    "mechanism_label": spec.design.identifier,
                     "instance": inst_name,
                     "run": run_idx,
                     "makespan": best_val,
                     "best_known": best_known,
                     "rpd": rpd,
                     "elapsed": elapsed,
-                    "iterations": max_iter,  # approximate, actual iterations not tracked
+                    "iterations": result.iterations,
                 }
             )
     return pd.DataFrame.from_records(records)

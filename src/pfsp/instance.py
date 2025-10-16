@@ -13,7 +13,7 @@ load all instances from an Excel file.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Mapping, Optional
 import numpy as np
 import pandas as pd
 
@@ -143,3 +143,33 @@ def read_raw_instance(path: str) -> Instance:
     import os
     name = os.path.splitext(os.path.basename(path))[0]
     return Instance(name=name, p_times=p_times)
+
+
+def load_best_known(csv_path: str) -> Dict[str, int]:
+    """Load best known makespans from a CSV file.
+
+    The CSV is expected to contain at least two columns: ``instance`` and
+    ``best_makespan``.  Additional columns are ignored.
+    """
+
+    df = pd.read_csv(csv_path)
+    if "instance" not in df.columns or "best_makespan" not in df.columns:
+        raise ValueError(
+            "Best known CSV must contain 'instance' and 'best_makespan' columns"
+        )
+    mapping = (
+        df[["instance", "best_makespan"]]
+        .dropna()
+        .set_index("instance")["best_makespan"]
+        .astype(int)
+        .to_dict()
+    )
+    return mapping
+
+
+def attach_best_known(instances: Dict[str, Instance], best_known: Mapping[str, int]) -> None:
+    """Attach best known makespans to the provided instances in-place."""
+
+    for name, value in best_known.items():
+        if name in instances:
+            instances[name].best_makespan = int(value)
