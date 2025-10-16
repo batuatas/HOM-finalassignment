@@ -18,7 +18,13 @@ python scripts/run_experiments.py --instances-file data/Instances.xlsx \
 """
 
 import argparse
+import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if SRC.exists():
+    sys.path.insert(0, str(SRC))
 
 from pfsp.design import describe_design
 from pfsp.instance import attach_best_known, load_best_known, read_instances
