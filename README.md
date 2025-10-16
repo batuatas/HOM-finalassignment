@@ -7,7 +7,8 @@ Problem (PFSP), using both deterministic and adaptive operator scheduling mechan
 The project is organised to make it easy to reproduce experiments and extend the code for your own
 research.  It includes scripts to parse provided instances, implement the proposed metaheuristic,
 run controlled experiments and generate plots.  The repository is intentionally lightweight and
-Pythonic – there are no heavy frameworks and the only dependencies are NumPy, pandas and matplotlib.
+Pythonic – there are no heavy frameworks and the core dependencies are NumPy, pandas, matplotlib,
+openpyxl and the Numba JIT compiler for extra speed.
 
 ## Contents
 
@@ -25,12 +26,6 @@ Pythonic – there are no heavy frameworks and the only dependencies are NumPy, 
   * `mechanisms.py` – registry that links each design to the concrete scheduler factory.
   * `algo_ig_ils.py` – an Iterated Greedy/Iterated Local Search metaheuristic for PFSP
     implementing Mechanism 1A or 2B and returning structured run statistics.
-  * `mechanisms/` – a dedicated package for operator scheduling mechanisms.  It exposes
-    the deterministic Mechanism 1A, the adaptive probability matching Mechanism 2A and a
-    lightweight factory so you can add new scheduling strategies without touching the
-    core metaheuristic.
-  * `algo_ig_ils.py` – an Iterated Greedy/Iterated Local Search metaheuristic for PFSP
-    implementing Mechanism 1A or 2A and returning structured run statistics.
   * `runner.py` – a high‐level experiment runner that executes multiple runs on a set of
     instances, validates mechanism names and records the real iteration counts.
   * `reporting.py` – helpers for computing Relative Percent Deviation (RPD) and tabular
@@ -94,20 +89,16 @@ python scripts/compare_mechanisms.py --mechanisms fixed adaptive --describe
 
 ## Notes
 
-* The code uses NumPy for efficient makespan calculation and incremental updates.  All
-  random number generators are seeded for reproducibility when required.
+* The code uses NumPy for efficient makespan calculation and incremental updates.  When the optional
+  Numba dependency is present the critical makespan loops are JIT compiled, yielding a substantial
+  speed-up for large neighbourhood searches.  All random number generators are seeded for
+  reproducibility when required.
 * The adaptive scheduler now implements the Mechanism 2B adaptive pursuit scheme:
   rewards are normalised by the current makespan improvement, credits are tracked in a
   sliding window and probabilities are nudged towards the best-performing operator while
   maintaining a minimum exploration floor.  The `pfsp/mechanisms.py` module exposes the
   deterministic and adaptive variants declaratively so you can add new mechanisms without
   changing the rest of the codebase.
-* The adaptive scheduler follows the probability matching approach described in Lecture 6:
-  after each operator application a reward is computed based on the relative improvement,
-  credits are updated using a sliding window and operator selection probabilities are
-  recomputed.  The `pfsp/mechanisms.py` module exposes the deterministic and adaptive
-  variants declaratively so you can add new mechanisms without changing the rest of the
-  codebase.
 * No external optimisation libraries are used – the algorithms are implemented from
   scratch so that you can easily modify or extend them.
 
