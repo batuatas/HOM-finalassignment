@@ -9,6 +9,7 @@ metaheuristic used in the final assignment.
 
 from __future__ import annotations
 
+from typing import Callable, Dict, Mapping, MutableMapping, NamedTuple, Sequence
 from dataclasses import dataclass
 from typing import Callable, Dict, Mapping, MutableMapping, Sequence
 
@@ -32,6 +33,7 @@ class SchedulerProtocol:
 SchedulerFactory = Callable[[Sequence[str], Mapping[str, object]], SchedulerProtocol]
 
 
+class MechanismSpec(NamedTuple):
 @dataclass(frozen=True)
 class MechanismSpec:
     """Pair a high-level design description with a scheduler factory."""
