@@ -15,15 +15,19 @@ from .base import Mechanism
 from .factory import build_mechanism
 from .fixed import FixedMechanism
 
+import importlib.machinery
 import importlib.util
 import os
 
 # Load the sibling module file `mechanisms.py` (the registry) under a
-# private name to avoid clashing with this package.
+# private name to avoid clashing with this package. Use SourceFileLoader so
+# that the loaded module has a proper __spec__ and __package__ set which
+# dataclasses rely on when they are created.
 _registry_path = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "mechanisms.py"))
-spec = importlib.util.spec_from_file_location("pfsp._mechanisms_registry", _registry_path)
+loader = importlib.machinery.SourceFileLoader("pfsp._mechanisms_registry", _registry_path)
+spec = importlib.util.spec_from_loader(loader.name, loader)
 _registry = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(_registry)
+loader.exec_module(_registry)
 
 # Re-export registry symbols expected by the rest of the codebase
 MECHANISMS = getattr(_registry, "MECHANISMS")
