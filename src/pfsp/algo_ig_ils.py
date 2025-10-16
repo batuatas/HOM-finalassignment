@@ -3,8 +3,8 @@
 This module implements a simple single‐solution metaheuristic combining
 Iterated Greedy/Iterated Local Search (IG/ILS) with Variable Neighbourhood
 Descent (VND) local search.  Two operator scheduling mechanisms are
-supported: a fixed sequence (Mechanism 1A) and an adaptive probability
-matching approach (Mechanism 2A).
+supported: a fixed sequence (Mechanism 1A) and an adaptive pursuit
+approach (Mechanism 2B).
 
 The main entry point is the ``IteratedGreedyILS`` class.  Create an instance
 with a processing time matrix and your choice of mechanism, then call
@@ -15,12 +15,22 @@ from __future__ import annotations
 
 import time
 import random
-from typing import Callable, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
 import numpy as np
 
 from .operators import Operators, makespan
-from .scheduler import FixedScheduler, AdaptiveScheduler
+from .mechanisms import build_scheduler, get_mechanism
+
+
+@dataclass
+class IGILSResult:
+    """Container holding the outcome of a solver run."""
+
+    permutation: List[int]
+    makespan: int
+    iterations: int
 
 
 class IteratedGreedyILS:
@@ -33,13 +43,17 @@ class IteratedGreedyILS:
     mechanism : str, optional
         The scheduling mechanism to use.  ``'fixed'`` selects the fixed
         sequence scheduler (Mechanism 1A), while ``'adaptive'`` selects
-        the adaptive scheduler (Mechanism 2A).  Defaults to ``'fixed'``.
+        the adaptive pursuit scheduler (Mechanism 2B).  Defaults to ``'fixed'``.
     window_size : int, optional
         Sliding window size for credit computation in the adaptive
         scheduler.  Ignored for the fixed scheduler.  Default is 50.
     p_min : float, optional
         Minimum probability for each operator in the adaptive scheduler.
         Ignored for the fixed scheduler.  Default is 0.1.
+    learning_rate : float, optional
+        Learning rate controlling how quickly adaptive pursuit updates the
+        selection probabilities.  Ignored for the fixed scheduler.  Default
+        is 0.2.
     block_lengths : Tuple[int, ...], optional
         Block lengths used for perturbation and the block operator.  Default
         is (2, 3).
@@ -53,51 +67,57 @@ class IteratedGreedyILS:
         mechanism: str = "fixed",
         window_size: int = 50,
         p_min: float = 0.1,
+        learning_rate: float = 0.2,
         block_lengths: Tuple[int, ...] = (2, 3),
         seed: Optional[int] = None,
     ) -> None:
-        self.p_times = p_times
-        self.operators = Operators(p_times)
+        self.p_times = np.ascontiguousarray(p_times, dtype=np.int64)
+        self.operators = Operators(self.p_times)
         if seed is not None:
             random.seed(seed)
             np.random.seed(seed)
-        # Define the list of operator names
-        self.op_names = ["relocate", "swap", "block"]
-        if mechanism not in {"fixed", "adaptive"}:
-            raise ValueError("mechanism must be 'fixed' or 'adaptive'")
         self.mechanism = mechanism
-        if mechanism == "fixed":
-            self.scheduler = FixedScheduler(self.op_names)
-        else:
-            self.scheduler = AdaptiveScheduler(self.op_names, window_size=window_size, p_min=p_min)
+        self.mechanism_spec = get_mechanism(mechanism)
+        self.op_names = list(self.mechanism_spec.design.operators)
+        scheduler_options = {
+            "window_size": window_size,
+            "p_min": p_min,
+            "learning_rate": learning_rate,
+        }
+        self.scheduler = build_scheduler(mechanism, self.op_names, scheduler_options)
         self.block_lengths = block_lengths
 
-    def _local_search(self, perm: List[int], value: int) -> Tuple[List[int], int]:
+    def _local_search(self, perm: np.ndarray, value: int) -> Tuple[np.ndarray, int]:
         """Perform VND local search until no operator yields an improvement.
 
         Parameters
         ----------
-        perm : List[int]
-            Starting permutation.
+        perm : np.ndarray
+            Starting permutation as a contiguous array of job indices.
         value : int
             Makespan of the starting permutation.
 
         Returns
         -------
-        Tuple[List[int], int]
-            The locally optimal permutation and its makespan.
+        Tuple[np.ndarray, int]
+            The locally optimal permutation (array) and its makespan.
         """
-        current_perm = perm
+        current_perm = np.ascontiguousarray(perm, dtype=np.int64)
         current_val = value
         improved = True
         while improved:
             improved = False
             # Reset scheduler at the start of each VND sweep
             self.scheduler.start_iter()
+            attempts = 0
+            max_attempts = len(self.op_names)
             while True:
+                if attempts >= max_attempts:
+                    break
                 op_name = self.scheduler.next_operator()
                 if op_name is None:
                     break
+                attempts += 1
                 neighbour = None
                 # Apply the chosen operator
                 if op_name == "relocate":
@@ -127,7 +147,7 @@ class IteratedGreedyILS:
         max_no_improve: int = 50,
         time_limit: Optional[float] = None,
         verbose: bool = False,
-    ) -> Tuple[List[int], int]:
+    ) -> IGILSResult:
         """Run the metaheuristic and return the best found permutation.
 
         Parameters
@@ -147,19 +167,22 @@ class IteratedGreedyILS:
 
         Returns
         -------
-        Tuple[List[int], int]
-            The best permutation found and its makespan.
+        IGILSResult
+            Dataclass capturing the best permutation, its makespan and the
+            number of ILS iterations performed.
         """
-        m, n = self.p_times.shape
-        # Start from a random permutation
-        current_perm = list(range(n))
-        random.shuffle(current_perm)
+        _, n = self.p_times.shape
+        # Start from a random permutation (NumPy array for fast NumPy/Numba ops)
+        current_perm = np.arange(n, dtype=np.int64)
+        np.random.shuffle(current_perm)
         current_val = makespan(current_perm, self.p_times)
         best_perm = current_perm.copy()
         best_val = current_val
         no_improve_count = 0
         start_time = time.time()
+        iterations = 0
         for it in range(max_iter):
+            iterations = it + 1
             # Check time limit
             if time_limit is not None and (time.time() - start_time) >= time_limit:
                 if verbose:
@@ -183,4 +206,4 @@ class IteratedGreedyILS:
             current_perm, current_val = self.operators.perturb_block_insert(
                 current_perm, block_lengths=self.block_lengths
             )
-        return best_perm, best_val
+        return IGILSResult(permutation=best_perm.tolist(), makespan=best_val, iterations=iterations)

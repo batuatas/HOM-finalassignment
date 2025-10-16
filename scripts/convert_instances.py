@@ -19,8 +19,14 @@ Dependencies: pandas (with openpyxl engine) and numpy.
 
 import argparse
 import os
+import sys
 from pathlib import Path
 import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if SRC.exists():
+    sys.path.insert(0, str(SRC))
 
 from pfsp.instance import read_raw_instance
 
