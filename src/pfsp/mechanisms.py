@@ -1,4 +1,4 @@
-# mechanisms.py
+# src/pfsp/mechanisms.py
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Mapping
@@ -11,7 +11,7 @@ class MechanismSpec:
     design: MechanismDesign
 
 _MECHS: Dict[str, MechanismSpec] = {
-    "fixed": MechanismSpec(key="fixed", design=get_design("fixed")),
+    "fixed":    MechanismSpec(key="fixed",    design=get_design("fixed")),
     "adaptive": MechanismSpec(key="adaptive", design=get_design("adaptive")),
 }
 
@@ -33,6 +33,8 @@ def build_scheduler(key: str, op_names: List[str], options: Mapping[str, float] 
             alpha=float(options.get("learning_rate", 0.30)),
             gamma=float(options.get("gamma", 0.60)),
             episode_len=int(options.get("episode_len", 50)),
+            tau=float(options.get("tau", 0.10)),
+            optimistic_init=float(options.get("optimistic_init", 0.01)),
         )
     else:
         raise KeyError(f"Unknown mechanism '{key}'")

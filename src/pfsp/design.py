@@ -1,5 +1,4 @@
-"""Human-readable mechanism descriptions used by --describe flags."""
-
+# src/pfsp/design.py
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Mapping, Sequence
@@ -18,32 +17,38 @@ DESIGNS: Mapping[str, MechanismDesign] = {
     "fixed": MechanismDesign(
         key="fixed",
         identifier="Mechanism 1A",
-        objective="Deterministic VND sweep with relocate → swap → block.",
+        objective="Deterministic VND with relocate → swap → block; granular neighborhoods (critical-path focus, bounded distance).",
         operators=("relocate", "swap", "block"),
-        scheduler=("Apply operators in fixed order; restart sweep whenever an improving move is accepted."),
-        parameters={},
-        notes=("Baseline per brief.",),
+        scheduler=("Fixed order; restart sweep whenever an improving move is accepted. Deterministic."),
+        parameters={
+            "granular_window": "Max relocate/block distance from source index.",
+            "critical_only":   "If true, only jobs in critical set are moved.",
+            "critical_take_frac": "Fraction of jobs considered 'critical'.",
+            "block_lengths":   "Block sizes for block reinsertion.",
+        },
+        notes=("NEH initialization; IG destroy–repair; occasional ruin–recreate; deadline-aware.",),
     ),
     "adaptive": MechanismDesign(
         key="adaptive",
         identifier="Mechanism 2B (Q-learning)",
-        objective="Episode-based ε-greedy Q-learning to select the most promising operator online.",
+        objective="Episode-based ε-greedy Q-learning to select operator online with richer state and softmax tie-break.",
         operators=("relocate", "swap", "block"),
         scheduler=(
-            "State = (recent improvement bin, stagnation bin). "
-            "At each step pick operator with ε-greedy policy; "
-            "update tabular Q with one-step TD target. Episodes have fixed length."
+            "State = (improvement bin, stagnation bin, search-phase bin). "
+            "ε-greedy with mild decay per episode; optimistic initialization; softmax tie-break."
         ),
         parameters={
-            "window_size": "Size of sliding window to compute recent-improvement signal.",
-            "p_min (ε)": "Exploration probability for ε-greedy (mapped from --p-min).",
-            "learning_rate (α)": "Q-learning step size (mapped from --learning-rate).",
-            "gamma (γ)": "Discount factor (default 0.60).",
-            "episode_len": "Steps per episode before mild ε decay.",
+            "window_size":   "Size of sliding window for improvement signal (if used).",
+            "p_min (ε)":     "Exploration probability.",
+            "learning_rate": "Q-learning step size (α).",
+            "gamma (γ)":     "Discount factor.",
+            "episode_len":   "Steps per episode.",
+            "tau":           "Softmax temperature (tie-break).",
+            "optimistic_init":"Initial Q-values for optimism in face of uncertainty.",
         },
         notes=(
-            "Reward = normalised makespan improvement (Δ / current makespan).",
-            "Meets the assignment’s Mechanism 2B requirement (Q-learning episodes).",
+            "Reward = normalized makespan improvement per step; small penalty on non-improving steps.",
+            "Shares neighborhoods and IG diversification with 1A; deadline-aware.",
         ),
     ),
 }
