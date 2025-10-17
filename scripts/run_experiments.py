@@ -19,13 +19,27 @@ from pfsp.instance import read_instances, load_best_known, attach_best_known
 from pfsp.algo_ig_ils import IteratedGreedyILS
 from pfsp.reporting import add_rpd_column, summarise_by_instance
 
-
 def run_single(instance_name: str, p_times, mechanism: str, seed: int, time_limit: float,
-               algo_kwargs: dict, run_kwargs: dict):
+               algo_kwargs: dict, run_kwargs: dict, trace_dir: Path | None):
+    # optional trace writer
+    logger = None
+    if trace_dir is not None:
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        trace_path = trace_dir / f"trace_{instance_name}_{mechanism}_seed{seed}.jsonl"
+        f = trace_path.open("w", encoding="utf-8")
+        def _logger(ev: dict):
+            f.write(json.dumps(ev) + "\n"); f.flush()
+        logger = _logger
+
     t0 = time.time()
-    algo = IteratedGreedyILS(p_times, mechanism=mechanism, seed=seed, **algo_kwargs)
+    algo = IteratedGreedyILS(p_times, mechanism=mechanism, seed=seed, logger=logger, **algo_kwargs)
     res = algo.run(time_limit=time_limit, **run_kwargs)
     elapsed = time.time() - t0
+
+    if logger:
+        try: f.close()
+        except Exception: pass
+
     return {
         "instance": instance_name,
         "mechanism_key": mechanism,
@@ -34,7 +48,6 @@ def run_single(instance_name: str, p_times, mechanism: str, seed: int, time_limi
         "iterations": res.iterations,
         "elapsed": elapsed,
     }
-
 
 def main():
     p = argparse.ArgumentParser()
@@ -49,25 +62,27 @@ def main():
     p.add_argument("--time-limit", type=float, default=10.0, help="seconds per run")
     p.add_argument("--outdir", type=str, default="results")
     p.add_argument("--verbose", action="store_true")
-
-    # ---- NEW: algorithm hyperparameters ----
-    # scheduler (2B)
+    p.add_argument("--progress-every", type=int, default=10, help="print progress every k iterations")
+    p.add_argument("--trace", action="store_true", help="write JSONL step traces into OUTDIR/traces/")
+    # algorithm hyperparameters
     p.add_argument("--window-size", type=int, default=50)
     p.add_argument("--p-min", type=float, default=0.10)
     p.add_argument("--learning-rate", type=float, default=0.30)
     p.add_argument("--gamma", type=float, default=0.60)
     p.add_argument("--episode-len", type=int, default=50)
-    # search
     p.add_argument("--block-lengths", type=str, default="2,3")
     p.add_argument("--d-frac", type=float, default=0.25)
     p.add_argument("--ls-step-cap", type=int, default=2000)
     p.add_argument("--ls-stagnation", type=int, default=200)
+    p.add_argument("--neh-orders", type=int, default=4)
+
     # run-level
     p.add_argument("--max-iter", type=int, default=10_000)
     p.add_argument("--max-no-improve", type=int, default=200)
 
     args = p.parse_args()
     outdir = Path(args.outdir); outdir.mkdir(parents=True, exist_ok=True)
+    trace_dir = (outdir / "traces") if args.trace else None
 
     if args.list_instances:
         xl = pd.ExcelFile(args.xlsx, engine="openpyxl")
@@ -96,7 +111,6 @@ def main():
         if args.verbose:
             print(f"[*] Subset selected: {', '.join(insts.keys())}")
 
-    # Parse block lengths
     try:
         block_lengths = tuple(int(x) for x in args.block_lengths.split(",") if x.strip())
     except Exception:
@@ -112,11 +126,13 @@ def main():
         d_frac=args.d_frac,
         ls_step_cap=args.ls_step_cap,
         ls_stagnation_limit=args.ls_stagnation,
+        neh_orders=args.neh_orders,
     )
     run_kwargs = dict(
         max_iter=args.max_iter,
         max_no_improve=args.max_no_improve,
         verbose=args.verbose,
+        progress_every=max(1, args.progress_every),
     )
 
     rows = []
@@ -126,8 +142,13 @@ def main():
                 if args.verbose:
                     print(f"-> {name} | {mech} | seed={sd} "
                           f"(t≤{args.time_limit}s, max_iter={args.max_iter}, max_no_improve={args.max_no_improve})")
-                r = run_single(name, inst.p_times, mech, sd, time_limit=args.time_limit,
-                               algo_kwargs=algo_kwargs, run_kwargs=run_kwargs)
+                r = run_single(
+                    name, inst.p_times, mech, sd,
+                    time_limit=args.time_limit,
+                    algo_kwargs=algo_kwargs,
+                    run_kwargs=run_kwargs,
+                    trace_dir=trace_dir
+                )
                 rows.append(r)
                 print(f"{name} | {mech} | seed={sd} -> {r['makespan']} in {r['elapsed']:.2f}s")
 
@@ -162,10 +183,10 @@ def main():
         "seeds": seeds,
         "algo_defaults": algo_kwargs,
         "run_defaults": run_kwargs,
+        "trace": bool(args.trace),
     }
     with open(outdir / "meta.json", "w") as f:
         json.dump(meta, f, indent=2)
-
 
 if __name__ == "__main__":
     main()
