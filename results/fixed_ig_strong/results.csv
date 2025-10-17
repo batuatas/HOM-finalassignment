@@ -1,0 +1,13 @@
+algorithm,mechanism_key,mechanism_label,instance,run,makespan,best_known,rpd,elapsed,iterations,seed
+fixed,fixed,Mechanism 1A,VFR400_20_10_Gap,0,23527,,,3.6781959533691406,63,123
+fixed,fixed,Mechanism 1A,VFR200_40_10_Gap,0,14531,,,17.546722888946533,45,123
+fixed,fixed,Mechanism 1A,VFR300_20_10_Gap,0,18449,,,3.720604181289673,53,123
+fixed,fixed,Mechanism 1A,VFR400_40_10_Gap,0,26048,,,71.54218888282776,93,123
+fixed,fixed,Mechanism 1A,VFR200_20_10_Gap,0,12767,,,4.893289089202881,75,123
+fixed,fixed,Mechanism 1A,VFR300_40_10_Gap,0,20260,,,60.845855712890625,92,123
+fixed,fixed,Mechanism 1A,VFR100_60_10_Gap,0,9992,,,37.320096015930176,48,123
+fixed,fixed,Mechanism 1A,VFR400_60_10_Gap,0,27986,,,365.45430994033813,102,123
+fixed,fixed,Mechanism 1A,VFR300_60_10_Gap,0,22347,,,153.95503282546997,65,123
+fixed,fixed,Mechanism 1A,VFR100_40_10_Gap,0,8525,,,10.195130825042725,42,123
+fixed,fixed,Mechanism 1A,VFR200_60_10_Gap,0,16257,,,102.9115080833435,68,123
+fixed,fixed,Mechanism 1A,VFR100_20_10_Gap,0,6953,,,1.5520319938659668,43,123

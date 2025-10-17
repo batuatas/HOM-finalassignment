@@ -1,0 +1,20 @@
+{
+  "args": {
+    "xlsx": "data/Instances.xlsx",
+    "best_known": "data/best_known.csv",
+    "mechanisms": "adaptive",
+    "seeds": "0",
+    "time_limit": 5.0,
+    "outdir": "results/debug_one",
+    "verbose": true,
+    "list_instances": false,
+    "instances": ""
+  },
+  "n_instances": 12,
+  "mechanisms": [
+    "adaptive"
+  ],
+  "seeds": [
+    0
+  ]
+}
