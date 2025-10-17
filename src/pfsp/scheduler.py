@@ -71,3 +71,73 @@ class QLearningScheduler:
     @staticmethod
     def state_from_signals(delta_frac: float, no_improve_steps: int) -> Tuple[int, int]:
         return (_bin_improvement(delta_frac), _bin_stagnation(no_improve_steps))
+
+class RandomScheduler:
+    """A random operator scheduler implementing Mechanism 1B.
+
+    Operators are applied in a random order for each local search iteration.
+    The order is reshuffled at the start of each iteration.
+    """
+
+    def __init__(self, operators: Sequence[str]):
+        self.operators: List[str] = list(operators)
+        self._sequence: List[str] = []
+        self._index: int = 0
+
+    def start_iter(self) -> None:
+        """Reset for a new iteration by shuffling the operators."""
+        self._sequence = self.operators.copy()
+        random.shuffle(self._sequence)
+        self._index = 0
+
+    def next_operator(self) -> Optional[str]:
+        """Return the next operator in the random sequence or ``None`` when done."""
+        if self._index >= len(self._sequence):
+            return None
+        op = self._sequence[self._index]
+        self._index += 1
+        return op
+
+    def update(self, op: str, reward: float) -> None:
+        """Random scheduler does not adapt; this method is a no-op."""
+        pass
+
+
+class QLearningScheduler:
+    """A Q-learning operator scheduler implementing Mechanism 2B (QLearning).
+
+    Maintains a Q-value for each operator representing its expected reward and
+    chooses operators using an epsilon-greedy policy.
+    """
+
+    def __init__(
+        self,
+        operators: Sequence[str],
+        alpha: float = 0.2,
+        epsilon: float = 0.1,
+    ):
+        self.operators: List[str] = list(operators)
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.qvalues: Dict[str, float] = {op: 0.0 for op in self.operators}
+
+    def start_iter(self) -> None:
+        """No special state to reset at the start of an iteration."""
+        pass
+
+    def next_operator(self) -> str:
+        """Choose an operator using epsilon-greedy over Q-values."""
+        if random.random() < self.epsilon:
+            return random.choice(self.operators)
+        # Exploit: choose operator(s) with maximal Q-value, break ties randomly
+        max_q = max(self.qvalues.values())
+        best_ops = [op for op, q in self.qvalues.items() if q == max_q]
+        return random.choice(best_ops)
+
+    def update(self, op: str, reward: float) -> None:
+        """Update the Q-value for the applied operator based on observed reward."""
+        old_q = self.qvalues.get(op, 0.0)
+        self.qvalues[op] = (1 - self.alpha) * old_q + self.alpha * reward
+
+            self.probabilities = [1.0 / k] * k
+>>>>>>> a9b38e8484df61b3a35b9fcb3126ffc4a99f9594
