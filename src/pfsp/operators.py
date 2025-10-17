@@ -5,7 +5,7 @@ import time
 import numpy as np
 
 def makespan(order: np.ndarray, p_times: np.ndarray) -> int:
-    m, n_all = p_times.shape
+    m, _ = p_times.shape
     n = order.shape[0]
     C = np.zeros((m, n), dtype=np.int64)
     C[0, 0] = p_times[0, order[0]]
@@ -17,18 +17,27 @@ def makespan(order: np.ndarray, p_times: np.ndarray) -> int:
             C[i, j] = max(C[i-1, j], C[i, j-1]) + p_times[i, order[j]]
     return int(C[m-1, n-1])
 
-def _best_insert_pos_with_ties(p_times: np.ndarray, seq: np.ndarray, job: int) -> Tuple[int, int]:
+def _best_insert_pos_with_ties(
+    p_times: np.ndarray, seq: np.ndarray, job: int, deadline: Optional[float] = None
+) -> Tuple[int, int]:
+    """Return (best_pos, best_value) to insert 'job' into seq; earliest pos on ties.
+    Obeys deadline (may short-circuit)."""
     if seq.size == 0:
         return 0, int(makespan(np.array([job], dtype=np.int64), p_times))
     best_val: Optional[int] = None
     best_pos = 0
     for pos in range(seq.size + 1):
+        if deadline and (pos % 16 == 0) and time.time() >= deadline:
+            break
         cand = np.insert(seq, pos, int(job))
         val = makespan(cand, p_times)
         if best_val is None or val < best_val:
             best_val = val
             best_pos = pos
-    return best_pos, int(best_val)  # type: ignore
+    if best_val is None:
+        # deadline tripped before any eval; append
+        return seq.size, int(makespan(np.append(seq, int(job)), p_times))
+    return best_pos, int(best_val)
 
 class Operators:
     def __init__(self, p_times: np.ndarray) -> None:
@@ -115,7 +124,7 @@ class Operators:
         for k, job in enumerate(removed):
             if deadline and (k % 8 == 0) and time.time() >= deadline:
                 break
-            pos, _ = _best_insert_pos_with_ties(self.p_times, seq, int(job))
+            pos, _ = _best_insert_pos_with_ties(self.p_times, seq, int(job), deadline=deadline)
             seq = np.insert(seq, pos, int(job))
         return seq, makespan(seq, self.p_times)
 
@@ -130,6 +139,6 @@ class Operators:
         for k, job in enumerate(removed):
             if deadline and (k % 8 == 0) and time.time() >= deadline:
                 break
-            pos, _ = _best_insert_pos_with_ties(self.p_times, seq, int(job))
+            pos, _ = _best_insert_pos_with_ties(self.p_times, seq, int(job), deadline=deadline)
             seq = np.insert(seq, pos, int(job))
         return seq, makespan(seq, self.p_times)
